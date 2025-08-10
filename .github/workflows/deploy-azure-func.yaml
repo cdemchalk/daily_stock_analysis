@@ -22,6 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 1) Login to Azure with your Service Principal (from GitHub Secrets)
       - name: Azure Login (Service Principal)
         uses: azure/login@v2
         with:
@@ -30,8 +31,9 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
 
+      # 2) Deploy the repo to your Function App
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
           package: '.'
