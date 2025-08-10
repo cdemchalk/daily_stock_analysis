@@ -22,8 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Log in to Azure using your Service Principal + client secret
-      - name: Azure Login
+      - name: Azure Login (Service Principal)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
