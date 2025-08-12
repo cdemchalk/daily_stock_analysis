@@ -7,25 +7,28 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
+          python-version: '3.10'
       - name: Install dependencies (sanity check)
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Deploy to Azure Functions
+      # ✨ Add this step
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Verify login
+        run: az account show
+
+      # ✨ Change this step (remove publish-profile)
       - name: Azure Functions - Deploy
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
-          package: '.'                                      # repo root contains host.json, function folder
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+          package: '.'
