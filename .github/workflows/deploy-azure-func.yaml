@@ -1,27 +1,64 @@
-name: Deploy Azure Function (Python)
+name: Deploy Azure Functions (Python)
 
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  FUNCTIONAPP_DIR: "."
+  PYTHON_VERSION: "3.10"   # keep 3.10 to match your previous file (use 3.11 if your app targets it)
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install dependencies into .python_packages
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt --target ".python_packages/lib/site-packages"
 
-      - name: Deploy to Azure Functions (Publish Profile)
+      - name: Ensure run-from-package deployment
+        run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
+
+      # ✅ Key fix: authenticate before deploy using your AZURE_CREDENTIALS secret
+      - name: Azure login (Service Principal)
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Optional sanity check
+      - name: Azure whoami
+        run: az account show
+
+      - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
-          app-name: stock-daily-runner
-          package: '.'
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
+          package: ${{ env.FUNCTIONAPP_DIR }}
+          # If you prefer server build, uncomment:
+          # scm-do-build-during-deployment: true
+
+      # Optional: log the exact default domain after deploy
+      - name: Print Function App URL
+        shell: bash
+        run: |
+          RG=$(az functionapp show \
+            --name "${{ secrets.AZURE_FUNCTIONAPP_NAME }}" \
+            --query "resourceGroup" -o tsv)
+          HOST=$(az functionapp show \
+            --name "${{ secrets.AZURE_FUNCTIONAPP_NAME }}" \
+            --resource-group "$RG" \
+            --query "defaultHostName" -o tsv)
+          echo "Default domain: https://$HOST"
+          echo "Try a function at: https://$HOST/api/<your-function-name>"
