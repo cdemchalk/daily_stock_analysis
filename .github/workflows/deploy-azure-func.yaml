@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  FUNCTIONAPP_DIR: "."
-  PYTHON_VERSION: "3.10"   # keep 3.10 to match your previous file (use 3.11 if your app targets it)
+  FUNCTIONAPP_DIR: "."        # change if your function app is in a subfolder
+  PYTHON_VERSION: "3.10"      # bump to 3.11 if your app targets it
 
 jobs:
   deploy:
@@ -31,13 +31,13 @@ jobs:
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
 
-      # ✅ Key fix: authenticate before deploy using your AZURE_CREDENTIALS secret
+      # ✅ Authenticate before deploy using your Service Principal JSON in AZURE_CREDENTIALS
       - name: Azure login (Service Principal)
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Optional sanity check
+      # Optional: sanity check the subscription/tenant
       - name: Azure whoami
         run: az account show
 
@@ -46,19 +46,17 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
           package: ${{ env.FUNCTIONAPP_DIR }}
-          # If you prefer server build, uncomment:
+          # If you prefer server-side build, uncomment:
           # scm-do-build-during-deployment: true
 
-      # Optional: log the exact default domain after deploy
+      # ✅ Robust host print: inlines resource group lookup to avoid missing --resource-group
       - name: Print Function App URL
         shell: bash
         run: |
-          RG=$(az functionapp show \
-            --name "${{ secrets.AZURE_FUNCTIONAPP_NAME }}" \
-            --query "resourceGroup" -o tsv)
           HOST=$(az functionapp show \
             --name "${{ secrets.AZURE_FUNCTIONAPP_NAME }}" \
-            --resource-group "$RG" \
+            --resource-group "$(az functionapp list --query "[?name=='${{ secrets.AZURE_FUNCTIONAPP_NAME }}'].resourceGroup" -o tsv)" \
             --query "defaultHostName" -o tsv)
+
           echo "Default domain: https://$HOST"
           echo "Try a function at: https://$HOST/api/<your-function-name>"
