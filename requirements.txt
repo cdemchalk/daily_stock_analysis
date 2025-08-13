@@ -1,1 +1,10 @@
-azure-functions
+azure-functions==1.17.0
+openai>=1.30.0
+python-dotenv>=1.0.1
+yfinance>=0.2.54
+pandas>=2.2.2
+numpy>=1.26.4
+requests>=2.32.0
+beautifulsoup4>=4.12.3
+praw>=7.7.1
+nltk>=3.9
