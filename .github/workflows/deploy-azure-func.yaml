@@ -1,17 +1,74 @@
-name: Deploy Azure Functions (Python)
+name: Test & Deploy Azure Functions (Python)
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   FUNCTIONAPP_DIR: "."        # change if your function app is in a subfolder
   PYTHON_VERSION: "3.10"      # bump to 3.11 if your app targets it
 
+concurrency:
+  group: deploy-azure-func
+  cancel-in-progress: true
+
 jobs:
+  # -------------------------
+  # 1) TEST JOB (must pass)
+  # -------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install runtime deps (venv)
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "WARNING: requirements.txt not found; proceeding."
+          fi
+
+      - name: Install test deps
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        run: |
+          # Prefer dev requirements if present; otherwise install pytest only
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          else
+            pip install pytest
+          fi
+
+      - name: Run tests (skip gracefully if none)
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G "tests/test_*.py" > /dev/null || compgen -G "*_test.py" > /dev/null; then
+            pytest -q
+          else
+            echo "No tests found (tests/test_*.py or *_test.py). Skipping."
+          fi
+
+  # -------------------------
+  # 2) DEPLOY JOB (after tests)
+  # -------------------------
   deploy:
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout
@@ -21,17 +78,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
 
+      # Prebuild deps into the Azure Functions convention path so they're packaged with the app
       - name: Install dependencies into .python_packages
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt --target ".python_packages/lib/site-packages"
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt --target ".python_packages/lib/site-packages"
+          else
+            echo "WARNING: requirements.txt not found; proceeding without extra dependencies."
+          fi
 
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
 
-      # ✅ Authenticate before deploy using your Service Principal JSON in AZURE_CREDENTIALS
+      # Authenticate using Service Principal JSON stored in AZURE_CREDENTIALS
       - name: Azure login (Service Principal)
         uses: azure/login@v1
         with:
@@ -41,22 +105,25 @@ jobs:
       - name: Azure whoami
         run: az account show
 
+      # Deploy the function app (zip-deploy). We rely on our prebuilt .python_packages.
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
           package: ${{ env.FUNCTIONAPP_DIR }}
-          # If you prefer server-side build, uncomment:
+          # If you prefer server-side Oryx build instead of prebuilding, comment the
+          # install step above and uncomment the line below:
           # scm-do-build-during-deployment: true
 
-      # ✅ Robust host print: inlines resource group lookup to avoid missing --resource-group
-      - name: Print Function App URL
+      # Post-deploy sanity: print host + list discovered functions
+      - name: Post-deploy sanity check (host + functions)
         shell: bash
         run: |
-          HOST=$(az functionapp show \
-            --name "${{ secrets.AZURE_FUNCTIONAPP_NAME }}" \
-            --resource-group "$(az functionapp list --query "[?name=='${{ secrets.AZURE_FUNCTIONAPP_NAME }}'].resourceGroup" -o tsv)" \
-            --query "defaultHostName" -o tsv)
-
-          echo "Default domain: https://$HOST"
-          echo "Try a function at: https://$HOST/api/<your-function-name>"
+          set -euo pipefail
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          HOST="$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName" -o tsv)"
+          echo "Default domain: https://${HOST}"
+          echo "Discovered functions:"
+          az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || echo "No functions listed (check function.json files)."
+          echo "Try a function at: https://${HOST}/api/<your-function-name>"
