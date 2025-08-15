@@ -25,7 +25,7 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 from nltk import download as nltk_download
 
 SUBREDDITS = ["wallstreetbets", "stocks", "investing", "options", "pennystocks"]
-BASELINE_PATH = Path("data/social_baseline.json")
+BASELINE_PATH = Path(os.getenv("SOCIAL_BASELINE_PATH", "/tmp/social_baseline.json"))
 WINDOW_HOURS = 6
 MAX_ITEMS = 300
 
