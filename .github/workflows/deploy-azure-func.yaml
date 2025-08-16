@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write  # Required for Azure login
 env:
   FUNCTIONAPP_DIR: "."
   PYTHON_VERSION: "3.12"
@@ -161,12 +162,31 @@ jobs:
         with:
           name: release-zip
           path: ${{ env.FUNCTIONAPP_DIR }}/release.zip
-      - name: Ensure run-from-package deployment
-        run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
       - name: Azure login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Ensure run-from-package deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          az webapp config appsettings set -g "$RG" -n "$APP" --settings WEBSITE_RUN_FROM_PACKAGE=1
+          echo "Waiting for configuration to apply..."
+          sleep 10  # Allow time for Azure to propagate the setting
+      - name: Verify WEBSITE_RUN_FROM_PACKAGE
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          SETTING=$(az webapp config appsettings list --name "${APP}" --resource-group "${RG}" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value" -o tsv)
+          if [ "$SETTING" != "1" ]; then
+            echo "ERROR: WEBSITE_RUN_FROM_PACKAGE is not set to 1" >&2
+            exit 1
+          fi
+          echo "WEBSITE_RUN_FROM_PACKAGE is correctly set to 1 ✅"
       - name: Disable Oryx server build
         shell: bash
         run: |
@@ -181,18 +201,6 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
           package: ${{ env.FUNCTIONAPP_DIR }}/release.zip
-      - name: Verify WEBSITE_RUN_FROM_PACKAGE
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
-          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
-          SETTING=$(az webapp config appsettings list --name "${APP}" --resource-group "${RG}" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value" -o tsv)
-          if [ "$SETTING" != "1" ]; then
-            echo "ERROR: WEBSITE_RUN_FROM_PACKAGE is not set to 1" >&2
-            exit 1
-          fi
-          echo "WEBSITE_RUN_FROM_PACKAGE is correctly set to 1 ✅"
       - name: Post-deploy sanity check
         shell: bash
         run: |
