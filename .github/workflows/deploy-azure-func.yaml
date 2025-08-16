@@ -79,33 +79,36 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      # PREBUILD all deps into .python_packages using ONLY binary wheels (no compiling).
-      # This avoids ABI mismatches and guarantees yfinance/numpy/pandas are present.
       - name: Prebuild dependencies into .python_packages
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         shell: bash
         run: |
           set -euo pipefail
+          TARGET=".python_packages/lib/site-packages"
+          mkdir -p "$TARGET"
+
           python -m pip install --upgrade pip wheel
-          if [ -f requirements.txt ]; then
-            # Force binary wheels only, targeting the Functions site-packages path.
-            python -m pip install --only-binary=:all: -r requirements.txt \
-              --target ".python_packages/lib/site-packages"
-          else
-            echo "WARNING: requirements.txt not found; proceeding without extra dependencies."
-          fi
-          # Sanity: print a few key packages that MUST exist
+
+          # 1) Install 'peewee' FIRST into the target (allow source wheel/pure-Python).
+          #    This satisfies yfinance's dependency so the next step won't backtrack.
+          python -m pip install "peewee>=3.16.2" --target "$TARGET"
+
+          # 2) Install everything from requirements.txt as binary wheels into the target.
+          #    (Heavy deps like numpy/pandas/yfinance will be wheels.)
+          python -m pip install --only-binary=:all: -r requirements.txt --target "$TARGET"
+
+          # 3) Quick sanity check that the vendored site-packages contains the big ones.
           python - << 'PY'
           import os, pkgutil, sys
           sp = os.path.join(os.getcwd(), ".python_packages", "lib", "site-packages")
           assert os.path.isdir(sp), f"site-packages not found at {sp}"
           sys.path.insert(0, sp)
-          missing = [m for m in ["numpy","pandas","yfinance","requests"] if not pkgutil.find_loader(m)]
+          needed = ["numpy","pandas","yfinance","peewee","requests"]
+          missing = [m for m in needed if not pkgutil.find_loader(m)]
           if missing:
-            raise SystemExit(f"Missing expected wheels in .python_packages: {missing}")
-          print("Vendored wheels present: numpy/pandas/yfinance/requests ✅")
+            raise SystemExit(f"Missing expected packages in .python_packages: {missing}")
+          print("Vendored wheels present: numpy/pandas/yfinance/peewee/requests ✅")
           PY
-
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
 
