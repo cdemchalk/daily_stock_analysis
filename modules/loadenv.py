@@ -1,19 +1,18 @@
 import os
 from dotenv import load_dotenv
 
-
-def load_env(dotenv_path="/mnt/e/Financial/.env", required_keys=None, raise_on_missing=True):
+def load_env(dotenv_path=".env", required_keys=None, raise_on_missing=True):
     """
     Load environment variables from a .env file and verify required keys.
-
-    Args:
-        dotenv_path (str): Full path to the .env file.
-        required_keys (list): List of environment variable keys that must be present.
-        raise_on_missing (bool): If True, raises error if any required key is missing.
-
-    Returns:
-        dict: Dictionary of found key-value pairs (only for required_keys, if specified).
     """
+    # Skip loading in Azure (env vars are in Function App Settings)
+    if os.getenv("FUNCTIONS_WORKER_RUNTIME") == "python":
+        print("Running in Azure, skipping .env load")
+        found_env = {key: os.getenv(key) for key in required_keys or [] if os.getenv(key)}
+        missing_keys = [key for key in required_keys or [] if not os.getenv(key)]
+        if missing_keys and raise_on_missing:
+            raise EnvironmentError(f"Missing required env vars: {', '.join(missing_keys)}")
+        return found_env
 
     env_dir = os.path.dirname(dotenv_path)
     print(f"🔍 Checking for .env in: {env_dir}")
@@ -29,7 +28,6 @@ def load_env(dotenv_path="/mnt/e/Financial/.env", required_keys=None, raise_on_m
             raise FileNotFoundError(f"Directory {env_dir} not found.")
         return {}
 
-    # Load the .env file
     env_found = load_dotenv(dotenv_path=dotenv_path)
     if not env_found:
         print("❌ .env file not found or failed to load.")
@@ -57,4 +55,3 @@ def load_env(dotenv_path="/mnt/e/Financial/.env", required_keys=None, raise_on_m
             raise EnvironmentError(f"Missing required env vars: {', '.join(missing_keys)}")
 
     return found_env
-

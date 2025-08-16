@@ -1,0 +1,158 @@
+name: Test & Deploy Azure Functions (Python)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FUNCTIONAPP_DIR: "."          # change if your function app is in a subfolder
+  PYTHON_VERSION: "3.12"        # MATCHES your Azure Functions Python worker
+
+concurrency:
+  group: deploy-azure-func
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------
+  # 1) TEST JOB (must pass)
+  # -------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install runtime deps (venv)
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "WARNING: requirements.txt not found; proceeding."
+          fi
+
+      - name: Install test deps
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        run: |
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          else
+            pip install pytest
+          fi
+
+      - name: Run tests (skip gracefully if none)
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G "tests/test_*.py" > /dev/null || compgen -G "*_test.py" > /dev/null; then
+            pytest -q
+          else
+            echo "No tests found (tests/test_*.py or *_test.py). Skipping."
+          fi
+
+  # -------------------------
+  # 2) DEPLOY JOB (after tests)
+  # -------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python (build wheels for the SAME version as the host)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Prebuild dependencies into .python_packages
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=".python_packages/lib/site-packages"
+          mkdir -p "$TARGET"
+
+          python -m pip install --upgrade pip wheel
+
+          # --- Group A: pure-Python deps (install without --only-binary) ---
+          # yfinance + its pure deps (peewee, platformdirs, pytz, frozendict, multitasking)
+          python -m pip install --target "$TARGET" \
+            "peewee>=3.16.2" \
+            "yfinance==0.2.48" \
+            "platformdirs>=2.0.0" \
+            "pytz>=2022.5" \
+            "frozendict>=2.3.4" \
+            "multitasking>=0.0.7"
+	    "requests>=2.31" \
+  	    "lxml>=4.9.1" \
+  	    "html5lib>=1.1"		
+
+          # --- Group B: wheels-only for heavy libs and the rest of your stack ---
+          # Filter out yfinance/peewee so pip doesn't try to re-resolve them under wheels-only.
+          tmpreq="$(mktemp)"
+          awk '!/^[[:space:]]*(#|$)/ && !/^yfinance/ && !/^peewee/' requirements.txt > "$tmpreq"
+
+          python -m pip install --only-binary=:all: --target "$TARGET" -r "$tmpreq"
+
+          # --- Sanity check: make sure the vendored site-packages has everything we need ---
+          python - << 'PY'
+          import os, pkgutil, sys
+          sp = os.path.join(os.getcwd(), ".python_packages", "lib", "site-packages")
+          sys.path.insert(0, sp)
+          needed = ["numpy","pandas","yfinance","peewee","requests","pandas","nltk","praw","beautifulsoup4"]
+          missing = [m for m in needed if not pkgutil.find_loader(m)]
+          if missing:
+              raise SystemExit(f"Missing in .python_packages: {missing}")
+          print("Vendored wheels present ✅")
+          PY
+          
+      - name: Ensure run-from-package deployment
+        run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
+
+      - name: Azure login (Service Principal)
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Make sure we are NOT relying on Oryx (we’re shipping wheels ourselves).
+      - name: Disable Oryx server build (idempotent)
+        shell: bash
+        run: |
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          az webapp config appsettings set -g "$RG" -n "$APP" --settings \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            ENABLE_ORYX_BUILD=false
+
+      - name: Deploy to Azure Functions (zip with vendored deps)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
+          package: ${{ env.FUNCTIONAPP_DIR }}
+
+      # Post-deploy sanity: host & functions
+      - name: Post-deploy sanity check
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          HOST="$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName" -o tsv)"
+          echo "Default domain: https://${HOST}"
+          az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || true
+          echo "Try a function at: https://${HOST}/api/<your-function-name>"
