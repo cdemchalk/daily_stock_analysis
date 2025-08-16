@@ -140,7 +140,7 @@ jobs:
           ls -R .python_packages/lib/site-packages > packages.txt
           cat packages.txt
           grep -q "^yfinance$" packages.txt || { echo "ERROR: yfinance directory not found in .python_packages" >&2; exit 1; }
-          grep -q "^peewee$" packages.txt || { echo "ERROR: peewee directory not found in .python_packages" >&2; exit 1; }
+          grep -q "^peewee\.py$" packages.txt || { echo "ERROR: peewee.py file not found in .python_packages" >&2; exit 1; }
           echo "yfinance and peewee found in .python_packages ✅"
       - name: Create zip package
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
@@ -154,7 +154,7 @@ jobs:
           unzip -l release.zip > zip_contents.txt
           cat zip_contents.txt
           grep -q ".python_packages/lib/site-packages/yfinance/" zip_contents.txt || { echo "ERROR: yfinance directory not in release.zip" >&2; exit 1; }
-          grep -q ".python_packages/lib/site-packages/peewee/" zip_contents.txt || { echo "ERROR: peewee directory not in release.zip" >&2; exit 1; }
+          grep -q ".python_packages/lib/site-packages/peewee\.py" zip_contents.txt || { echo "ERROR: peewee.py file not in release.zip" >&2; exit 1; }
           echo "yfinance and peewee found in release.zip ✅"
       - name: Upload artifact for debugging
         uses: actions/upload-artifact@v4

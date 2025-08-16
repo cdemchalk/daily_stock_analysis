@@ -14,4 +14,4 @@ html5lib>=1.1
 platformdirs>=2.0.0
 pytz>=2022.5
 frozendict>=2.3.4
-multitasking>=0.0.7 
+multitasking>=0.0.7
