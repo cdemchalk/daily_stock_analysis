@@ -89,26 +89,35 @@ jobs:
 
           python -m pip install --upgrade pip wheel
 
-          # 1) Install 'peewee' FIRST into the target (allow source wheel/pure-Python).
-          #    This satisfies yfinance's dependency so the next step won't backtrack.
-          python -m pip install "peewee>=3.16.2" --target "$TARGET"
+          # --- Group A: pure-Python deps (install without --only-binary) ---
+          # yfinance + its pure deps (peewee, platformdirs, pytz, frozendict, multitasking)
+          python -m pip install --target "$TARGET" \
+            "peewee>=3.16.2" \
+            "yfinance==0.2.65" \
+            "platformdirs>=2.0.0" \
+            "pytz>=2022.5" \
+            "frozendict>=2.3.4" \
+            "multitasking>=0.0.7"
 
-          # 2) Install everything from requirements.txt as binary wheels into the target.
-          #    (Heavy deps like numpy/pandas/yfinance will be wheels.)
-          python -m pip install --only-binary=:all: -r requirements.txt --target "$TARGET"
+          # --- Group B: wheels-only for heavy libs and the rest of your stack ---
+          # Filter out yfinance/peewee so pip doesn't try to re-resolve them under wheels-only.
+          tmpreq="$(mktemp)"
+          awk '!/^[[:space:]]*(#|$)/ && !/^yfinance/ && !/^peewee/' requirements.txt > "$tmpreq"
 
-          # 3) Quick sanity check that the vendored site-packages contains the big ones.
+          python -m pip install --only-binary=:all: --target "$TARGET" -r "$tmpreq"
+
+          # --- Sanity check: make sure the vendored site-packages has everything we need ---
           python - << 'PY'
           import os, pkgutil, sys
           sp = os.path.join(os.getcwd(), ".python_packages", "lib", "site-packages")
-          assert os.path.isdir(sp), f"site-packages not found at {sp}"
           sys.path.insert(0, sp)
-          needed = ["numpy","pandas","yfinance","peewee","requests"]
+          needed = ["numpy","pandas","yfinance","peewee","requests","pandas","nltk","praw","beautifulsoup4"]
           missing = [m for m in needed if not pkgutil.find_loader(m)]
           if missing:
-            raise SystemExit(f"Missing expected packages in .python_packages: {missing}")
-          print("Vendored wheels present: numpy/pandas/yfinance/peewee/requests ✅")
+              raise SystemExit(f"Missing in .python_packages: {missing}")
+          print("Vendored wheels present ✅")
           PY
+          
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
 
