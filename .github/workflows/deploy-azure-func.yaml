@@ -4,11 +4,13 @@ deploy:
   steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history to avoid git issues
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: none  # Disable pip cache to force fresh install
+        python-version: ${{ env.PYTHON_VERSION }}  # 3.12
+        cache: none  # Disable pip cache
     - name: Validate requirements.txt
       working-directory: ${{ env.FUNCTIONAPP_DIR }}
       shell: bash
@@ -27,7 +29,14 @@ deploy:
         TARGET=".python_packages/lib/site-packages"
         mkdir -p "$TARGET"
         python -m pip install --upgrade pip wheel
-        python -m pip install --only-binary=:all: --target "$TARGET" -r requirements.txt --verbose
+        echo "Installing dependencies..."
+        python -m pip install --only-binary=:all: --target "$TARGET" -r requirements.txt --verbose > pip_install.log 2>&1
+        cat pip_install.log
+        if grep -i "error" pip_install.log; then
+          echo "ERROR: pip install encountered errors" >&2
+          exit 1
+        fi
+        echo "Verifying installed packages..."
         python - << 'PY'
         import os, pkgutil, sys
         sp = os.path.join(os.getcwd(), ".python_packages", "lib", "site-packages")
@@ -43,16 +52,23 @@ deploy:
       working-directory: ${{ env.FUNCTIONAPP_DIR }}
       run: |
         set -euo pipefail
-        ls -R .python_packages/lib/site-packages | grep yfinance || { echo "ERROR: yfinance not found in .python_packages" >&2; exit 1; }
+        echo "Listing .python_packages contents..."
+        ls -R .python_packages/lib/site-packages > packages.txt
+        cat packages.txt
+        grep -q "yfinance" packages.txt || { echo "ERROR: yfinance not found in .python_packages" >&2; exit 1; }
         echo "yfinance found in .python_packages ✅"
     - name: Create zip package
       working-directory: ${{ env.FUNCTIONAPP_DIR }}
       shell: bash
       run: |
         set -euo pipefail
-        zip -r release.zip . -x "venv/*" ".git/*" "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md"
+        echo "Creating release.zip..."
+        zip -r release.zip . -x "venv/*" ".git/*" "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
         ls -l release.zip
-        unzip -l release.zip | grep yfinance || { echo "ERROR: yfinance not in release.zip" >&2; exit 1; }
+        echo "Verifying zip contents..."
+        unzip -l release.zip > zip_contents.txt
+        cat zip_contents.txt
+        grep -q ".python_packages/lib/site-packages/yfinance" zip_contents.txt || { echo "ERROR: yfinance not in release.zip" >&2; exit 1; }
         echo "yfinance found in release.zip ✅"
     - name: Ensure run-from-package deployment
       run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
