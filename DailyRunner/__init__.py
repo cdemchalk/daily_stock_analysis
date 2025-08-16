@@ -15,4 +15,4 @@ def main(mytimer: func.TimerRequest) -> None:
         logging.info("DailyRunner finished")
     except Exception as e:
         logging.error("DailyRunner runtime error: %s\n%s", e, traceback.format_exc())
-        raise
+        raise 
