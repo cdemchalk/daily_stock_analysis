@@ -2,15 +2,15 @@ name: Test & Deploy Azure Functions (Python)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  FUNCTIONAPP_DIR: "."        # change if your function app is in a subfolder
-  PYTHON_VERSION: "3.10"      # bump to 3.11 if your app targets it
+  FUNCTIONAPP_DIR: "."         # change if your function app is in a subfolder
+  PYTHON_VERSION: "3.12"       # match Azure Functions Python worker (your host shows 3.12)
 
 concurrency:
   group: deploy-azure-func
@@ -45,7 +45,6 @@ jobs:
       - name: Install test deps
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         run: |
-          # Prefer dev requirements if present; otherwise install pytest only
           if [ -f requirements-dev.txt ]; then
             pip install -r requirements-dev.txt
           else
@@ -74,46 +73,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
-
-      # Prebuild deps into the Azure Functions convention path so they're packaged with the app
-      - name: Install dependencies into .python_packages
-        working-directory: ${{ env.FUNCTIONAPP_DIR }}
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            python -m pip install -r requirements.txt --target ".python_packages/lib/site-packages"
-          else
-            echo "WARNING: requirements.txt not found; proceeding without extra dependencies."
-          fi
+      # IMPORTANT: do NOT prebuild .python_packages here.
+      # Let Azure do a server-side (Oryx) build to get wheels compatible with the host.
 
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
 
-      # Authenticate using Service Principal JSON stored in AZURE_CREDENTIALS
       - name: Azure login (Service Principal)
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Optional: sanity check the subscription/tenant
-      - name: Azure whoami
-        run: az account show
+      # Ensure Oryx server build is enabled on the app (idempotent)
+      - name: Enable server-side (Oryx) build
+        shell: bash
+        run: |
+          APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          az webapp config appsettings set -g "$RG" -n "$APP" \
+            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
 
-      # Deploy the function app (zip-deploy). We rely on our prebuilt .python_packages.
-      - name: Deploy to Azure Functions
+      - name: Deploy to Azure Functions (server build)
         uses: Azure/functions-action@v1
         with:
-          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}   # e.g., stock-daily-runner
+          app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
           package: ${{ env.FUNCTIONAPP_DIR }}
-          # If you prefer server-side Oryx build instead of prebuilding, comment the
-          # install step above and uncomment the line below:
-          # scm-do-build-during-deployment: true
+          scm-do-build-during-deployment: true
 
       # Post-deploy sanity: print host + list discovered functions
       - name: Post-deploy sanity check (host + functions)
