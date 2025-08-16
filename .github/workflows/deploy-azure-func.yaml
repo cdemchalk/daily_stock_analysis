@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 env:
-  FUNCTIONAPP_DIR: "."         # change if your function app is in a subfolder
-  PYTHON_VERSION: "3.12"       # match Azure Functions Python worker (your host shows 3.12)
+  FUNCTIONAPP_DIR: "."          # change if your function app is in a subfolder
+  PYTHON_VERSION: "3.12"        # MATCHES your Azure Functions Python worker
 
 concurrency:
   group: deploy-azure-func
@@ -73,8 +73,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # IMPORTANT: do NOT prebuild .python_packages here.
-      # Let Azure do a server-side (Oryx) build to get wheels compatible with the host.
+      - name: Set up Python (build wheels for the SAME version as the host)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      # PREBUILD all deps into .python_packages using ONLY binary wheels (no compiling).
+      # This avoids ABI mismatches and guarantees yfinance/numpy/pandas are present.
+      - name: Prebuild dependencies into .python_packages
+        working-directory: ${{ env.FUNCTIONAPP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip wheel
+          if [ -f requirements.txt ]; then
+            # Force binary wheels only, targeting the Functions site-packages path.
+            python -m pip install --only-binary=:all: -r requirements.txt \
+              --target ".python_packages/lib/site-packages"
+          else
+            echo "WARNING: requirements.txt not found; proceeding without extra dependencies."
+          fi
+          # Sanity: print a few key packages that MUST exist
+          python - << 'PY'
+          import os, pkgutil, sys
+          sp = os.path.join(os.getcwd(), ".python_packages", "lib", "site-packages")
+          assert os.path.isdir(sp), f"site-packages not found at {sp}"
+          sys.path.insert(0, sp)
+          missing = [m for m in ["numpy","pandas","yfinance","requests"] if not pkgutil.find_loader(m)]
+          if missing:
+            raise SystemExit(f"Missing expected wheels in .python_packages: {missing}")
+          print("Vendored wheels present: numpy/pandas/yfinance/requests ✅")
+          PY
 
       - name: Ensure run-from-package deployment
         run: echo "WEBSITE_RUN_FROM_PACKAGE=1" >> $GITHUB_ENV
@@ -84,24 +114,24 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Ensure Oryx server build is enabled on the app (idempotent)
-      - name: Enable server-side (Oryx) build
+      # Make sure we are NOT relying on Oryx (we’re shipping wheels ourselves).
+      - name: Disable Oryx server build (idempotent)
         shell: bash
         run: |
           APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
           RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
-          az webapp config appsettings set -g "$RG" -n "$APP" \
-            --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true
+          az webapp config appsettings set -g "$RG" -n "$APP" --settings \
+            SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            ENABLE_ORYX_BUILD=false
 
-      - name: Deploy to Azure Functions (server build)
+      - name: Deploy to Azure Functions (zip with vendored deps)
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}
           package: ${{ env.FUNCTIONAPP_DIR }}
-          scm-do-build-during-deployment: true
 
-      # Post-deploy sanity: print host + list discovered functions
-      - name: Post-deploy sanity check (host + functions)
+      # Post-deploy sanity: host & functions
+      - name: Post-deploy sanity check
         shell: bash
         run: |
           set -euo pipefail
@@ -109,6 +139,5 @@ jobs:
           RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
           HOST="$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName" -o tsv)"
           echo "Default domain: https://${HOST}"
-          echo "Discovered functions:"
-          az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || echo "No functions listed (check function.json files)."
+          az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || true
           echo "Try a function at: https://${HOST}/api/<your-function-name>"
