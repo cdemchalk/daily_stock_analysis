@@ -93,11 +93,14 @@ jobs:
           # yfinance + its pure deps (peewee, platformdirs, pytz, frozendict, multitasking)
           python -m pip install --target "$TARGET" \
             "peewee>=3.16.2" \
-            "yfinance==0.2.65" \
+            "yfinance==0.2.48" \
             "platformdirs>=2.0.0" \
             "pytz>=2022.5" \
             "frozendict>=2.3.4" \
             "multitasking>=0.0.7"
+	    "requests>=2.31" \
+  	    "lxml>=4.9.1" \
+  	    "html5lib>=1.1"		
 
           # --- Group B: wheels-only for heavy libs and the rest of your stack ---
           # Filter out yfinance/peewee so pip doesn't try to re-resolve them under wheels-only.
