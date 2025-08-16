@@ -33,6 +33,7 @@ jobs:
             exit 1
           fi
           grep -q "yfinance.*==.*0\.2\.48" requirements.txt || { echo "ERROR: yfinance==0.2.48 missing in requirements.txt" >&2; exit 1; }
+          grep -q "peewee.*==.*3\.18\.2" requirements.txt || { echo "ERROR: peewee==3.18.2 missing in requirements.txt" >&2; exit 1; }
       - name: Install runtime deps
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         run: |
@@ -70,6 +71,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ python3-dev
       - name: Validate requirements.txt
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         shell: bash
@@ -80,6 +85,7 @@ jobs:
             exit 1
           fi
           grep -q "yfinance.*==.*0\.2\.48" requirements.txt || { echo "ERROR: yfinance==0.2.48 missing in requirements.txt" >&2; exit 1; }
+          grep -q "peewee.*==.*3\.18\.2" requirements.txt || { echo "ERROR: peewee==3.18.2 missing in requirements.txt" >&2; exit 1; }
       - name: Prebuild dependencies into .python_packages
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         shell: bash
@@ -88,9 +94,22 @@ jobs:
           TARGET=".python_packages/lib/site-packages"
           mkdir -p "$TARGET"
           python -m pip install --upgrade pip wheel
-          echo "Installing dependencies with retry..."
+          echo "Installing peewee separately..."
           for attempt in {1..3}; do
-            echo "Attempt $attempt..."
+            echo "Attempt $attempt for peewee..."
+            python -m pip install --target "$TARGET" peewee==3.18.2 --verbose > pip_install_peewee.log 2>&1 && break
+            echo "Retry $attempt for peewee failed, waiting 5 seconds..."
+            sleep 5
+            if [ $attempt -eq 3 ]; then
+              echo "ERROR: pip install peewee failed after 3 attempts" >&2
+              cat pip_install_peewee.log
+              exit 1
+            fi
+          done
+          cat pip_install_peewee.log
+          echo "Installing remaining dependencies..."
+          for attempt in {1..3}; do
+            echo "Attempt $attempt for requirements.txt..."
             python -m pip install --only-binary=:all: --target "$TARGET" -r requirements.txt --verbose > pip_install.log 2>&1 && break
             echo "Retry $attempt failed, waiting 5 seconds..."
             sleep 5
@@ -101,7 +120,7 @@ jobs:
             fi
           done
           cat pip_install.log
-          if grep -i "error" pip_install.log; then
+          if grep -i "error" pip_install.log || grep -i "error" pip_install_peewee.log; then
             echo "ERROR: pip install encountered errors" >&2
             exit 1
           fi
@@ -125,7 +144,8 @@ jobs:
           ls -R .python_packages/lib/site-packages > packages.txt
           cat packages.txt
           grep -q "^yfinance$" packages.txt || { echo "ERROR: yfinance directory not found in .python_packages" >&2; exit 1; }
-          echo "yfinance found in .python_packages ✅"
+          grep -q "^peewee$" packages.txt || { echo "ERROR: peewee directory not found in .python_packages" >&2; exit 1; }
+          echo "yfinance and peewee found in .python_packages ✅"
       - name: Create zip package
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         shell: bash
@@ -138,7 +158,8 @@ jobs:
           unzip -l release.zip > zip_contents.txt
           cat zip_contents.txt
           grep -q ".python_packages/lib/site-packages/yfinance/" zip_contents.txt || { echo "ERROR: yfinance directory not in release.zip" >&2; exit 1; }
-          echo "yfinance found in release.zip ✅"
+          grep -q ".python_packages/lib/site-packages/peewee/" zip_contents.txt || { echo "ERROR: peewee directory not in release.zip" >&2; exit 1; }
+          echo "yfinance and peewee found in release.zip ✅"
       - name: Upload artifact for debugging
         uses: actions/upload-artifact@v4
         with:
