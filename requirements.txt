@@ -1,4 +1,6 @@
 azure-functions==1.17.0
+azure-identity>=1.13.0
+azure-keyvault-secrets>=4.7.0
 openai>=1.30.0
 python-dotenv>=1.0.1
 yfinance==0.2.65
