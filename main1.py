@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 
 import os, sys
 from datetime import datetime
 import logging
+
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
 
 # Configure logging for Azure
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +28,8 @@ try:
         "REDDIT_CLIENT_ID",
         "REDDIT_CLIENT_SECRET",
         "REDDIT_USER_AGENT",
+        # Key Vault (add your vault name here)
+        "KEY_VAULT_NAME",
     ], raise_on_missing=False)
 except Exception as e:
     logging.error(f"Failed to load environment variables: {str(e)}")
@@ -46,8 +51,22 @@ except Exception:
     build_html_report = None
 from emailer import send_email
 
-# Corrected BOA to BAC
-WATCHLIST = [t.strip().upper() for t in os.getenv("TICKERS", "BAC,MSFT,UVIX").split(",") if t.strip()]
+# Fetch WATCHLIST from Azure Key Vault
+def get_watchlist_from_key_vault():
+    try:
+        vault_name = os.getenv("KEY_VAULT_NAME")
+        if not vault_name:
+            raise ValueError("KEY_VAULT_NAME environment variable is not set")
+        vault_url = f"https://{vault_name}.vault.azure.net/"
+        credential = DefaultAzureCredential()
+        client = SecretClient(vault_url=vault_url, credential=credential)
+        tickers_str = client.get_secret("Tickers").value
+        return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+    except Exception as e:
+        logging.error(f"Failed to fetch WATCHLIST from Key Vault: {str(e)}")
+        return []  # Fallback to empty list or default if needed
+
+WATCHLIST = get_watchlist_from_key_vault()
 RUN_TS = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 def _social_as_news_item(ticker, social):
@@ -66,7 +85,7 @@ def _fallback_html(summaries):
         rows.append(f"""
         <tr>
           <td style="font-weight:600">{tkr}</td>
-          <td><pre style="white-space:pre-wrap;margin:0">{payload.get('summary','')}</pre></td>
+          <td><pre style="white-space:pre-wrap;margin=0">{payload.get('summary','')}</pre></td>
         </tr>
         """)
     return f"""
@@ -81,6 +100,9 @@ def _fallback_html(summaries):
     """
 
 def run():
+    if not WATCHLIST:
+        logging.error("No tickers found in WATCHLIST. Skipping execution.")
+        return
     logging.info(f"Starting DailyRunner for tickers: {WATCHLIST}")
     if callable(reddit_healthcheck):
         try:
@@ -129,4 +151,4 @@ def run():
     logging.info("Email sent successfully")
 
 if __name__ == "__main__":
-    run()
+         run()
