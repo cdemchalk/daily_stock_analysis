@@ -3,6 +3,10 @@
 
 import os, sys
 from datetime import datetime
+import logging
+
+# Configure logging for Azure
+logging.basicConfig(level=logging.INFO)
 
 # If you truly need ./modules, keep this; otherwise remove.
 BASE_DIR = os.path.dirname(__file__)
@@ -22,8 +26,8 @@ try:
         "REDDIT_CLIENT_SECRET",
         "REDDIT_USER_AGENT",
     ], raise_on_missing=False)
-except Exception:
-    pass
+except Exception as e:
+    logging.error(f"Failed to load environment variables: {str(e)}")
 
 from technical import get_technical_indicators
 from fundamentals import get_fundamentals
@@ -42,7 +46,8 @@ except Exception:
     build_html_report = None
 from emailer import send_email
 
-WATCHLIST = [t.strip().upper() for t in os.getenv("TICKERS", "BOA,MSFT,UVIX").split(",") if t.strip()]
+# Corrected BOA to BAC
+WATCHLIST = [t.strip().upper() for t in os.getenv("TICKERS", "BAC,MSFT,UVIX").split(",") if t.strip()]
 RUN_TS = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 def _social_as_news_item(ticker, social):
@@ -76,24 +81,31 @@ def _fallback_html(summaries):
     """
 
 def run():
+    logging.info(f"Starting DailyRunner for tickers: {WATCHLIST}")
     if callable(reddit_healthcheck):
         try:
             reddit_healthcheck()
-        except Exception:
-            pass
+            logging.info("Reddit healthcheck completed")
+        except Exception as e:
+            logging.error(f"Reddit healthcheck failed: {str(e)}")
 
     summaries = {}
     for ticker in WATCHLIST:
         try:
+            logging.info(f"Processing ticker: {ticker}")
             ta = get_technical_indicators(ticker)
+            logging.info(f"Technical indicators for {ticker}: {ta}")
             fa = get_fundamentals(ticker)
+            logging.info(f"Fundamentals for {ticker}: {fa}")
             news_items = fetch_news(ticker) or []
+            logging.info(f"News items for {ticker}: {len(news_items)}")
             strat = evaluate_strategy(ticker)
+            logging.info(f"Strategy for {ticker}: {strat}")
             social = social_snapshot(ticker) if social_snapshot else None
+            logging.info(f"Social snapshot for {ticker}: {social}")
             news_items.append(_social_as_news_item(ticker, social))
-
             summary_text = summarize_insights(ticker, ta, fa, news_items)
-
+            logging.info(f"Summary for {ticker}: {summary_text}")
             summaries[ticker] = {
                 "summary": summary_text,
                 "technical": ta,
@@ -103,14 +115,18 @@ def run():
                 "social": social,
             }
         except Exception as e:
+            logging.error(f"Error processing {ticker}: {str(e)}")
             summaries[ticker] = {
                 "summary": f"⚠️ Error processing {ticker}: {e}",
                 "technical": None, "fundamentals": None, "news": [],
                 "strategy": None, "social": None,
             }
 
+    logging.info("Generating HTML report")
     html = build_html_report(summaries, run_timestamp=RUN_TS) if callable(build_html_report) else _fallback_html(summaries)
+    logging.info("Sending email with report")
     send_email(html)
+    logging.info("Email sent successfully")
 
 if __name__ == "__main__":
     run()
