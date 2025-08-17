@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# -*- coding: utf-8 -*-
 
 import os, sys
 from datetime import datetime
@@ -28,7 +28,6 @@ try:
         "REDDIT_CLIENT_ID",
         "REDDIT_CLIENT_SECRET",
         "REDDIT_USER_AGENT",
-        # Key Vault (add your vault name here)
         "KEY_VAULT_NAME",
     ], raise_on_missing=False)
 except Exception as e:
@@ -51,20 +50,23 @@ except Exception:
     build_html_report = None
 from emailer import send_email
 
-# Fetch WATCHLIST from Azure Key Vault
+# Fetch WATCHLIST from Azure Key Vault (Azure) or env var (local)
 def get_watchlist_from_key_vault():
     try:
         vault_name = os.getenv("KEY_VAULT_NAME")
-        if not vault_name:
-            raise ValueError("KEY_VAULT_NAME environment variable is not set")
-        vault_url = f"https://{vault_name}.vault.azure.net/"
-        credential = DefaultAzureCredential()
-        client = SecretClient(vault_url=vault_url, credential=credential)
-        tickers_str = client.get_secret("Tickers").value
-        return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+        if os.getenv("FUNCTIONS_WORKER_RUNTIME") == "python" and vault_name:
+            vault_url = f"https://{vault_name}.vault.azure.net/"
+            credential = DefaultAzureCredential()
+            client = SecretClient(vault_url=vault_url, credential=credential)
+            tickers_str = client.get_secret("Tickers").value
+            return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+        else:
+            # Local fallback to env var or .env
+            tickers_str = os.getenv("TICKERS", "BAC,MSFT,UVIX")
+            return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
     except Exception as e:
         logging.error(f"Failed to fetch WATCHLIST from Key Vault: {str(e)}")
-        return []  # Fallback to empty list or default if needed
+        return ["BAC", "MSFT", "UVIX"]  # Fallback to default tickers
 
 WATCHLIST = get_watchlist_from_key_vault()
 RUN_TS = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -151,4 +153,4 @@ def run():
     logging.info("Email sent successfully")
 
 if __name__ == "__main__":
-         run()
+    run()
