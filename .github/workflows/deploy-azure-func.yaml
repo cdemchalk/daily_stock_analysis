@@ -37,7 +37,7 @@ jobs:
             echo "ERROR: requirements.txt not found" >&2
             exit 1
           fi
-          grep -q "yfinance.*==.*0\.2\.48" requirements.txt || { echo "ERROR: yfinance==0.2.48 missing in requirements.txt" >&2; exit 1; }
+          grep -q "yfinance.*==.*0\.2\.65" requirements.txt || { echo "ERROR: yfinance==0.2.65 missing in requirements.txt" >&2; exit 1; }
           grep -q "peewee.*==.*3\.18\.2" requirements.txt || { echo "ERROR: peewee==3.18.2 missing in requirements.txt" >&2; exit 1; }
       - name: Install runtime deps
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
