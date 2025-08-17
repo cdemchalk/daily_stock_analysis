@@ -16,7 +16,11 @@ def get_technical_indicators(ticker):
     try:
         data = yf.download(ticker, period="6mo", interval="1d", auto_adjust=True)
         if data.empty:
-            logging.warning(f"No data from yf.download for {ticker}, trying auto_adjust=False")
+            logging.warning(f"No data from yf.download for {ticker}, trying Ticker.history")
+            stock = yf.Ticker(ticker)
+            data = stock.history(period="6mo", interval="1d", auto_adjust=True)
+        if data.empty:
+            logging.warning(f"No data from Ticker.history for {ticker}, trying auto_adjust=False")
             data = yf.download(ticker, period="6mo", interval="1d", auto_adjust=False)
         if data.empty:
             logging.error(f"No data for {ticker}")
@@ -27,11 +31,11 @@ def get_technical_indicators(ticker):
         data["VWAP"]   = (data["Close"]*data["Volume"]).cumsum() / data["Volume"].cumsum()
         last = data.dropna().iloc[-1]
         return {
-            "price": float(last["Close"]),
-            "EMA_9": float(last["EMA_9"]),
-            "EMA_20": float(last["EMA_20"]),
-            "RSI": float(last["RSI"]),
-            "VWAP": float(last["VWAP"]),
+            "price": float(last["Close"].iloc[0] if isinstance(last["Close"], pd.Series) else last["Close"]),
+            "EMA_9": float(last["EMA_9"].iloc[0] if isinstance(last["EMA_9"], pd.Series) else last["EMA_9"]),
+            "EMA_20": float(last["EMA_20"].iloc[0] if isinstance(last["EMA_20"], pd.Series) else last["EMA_20"]),
+            "RSI": float(last["RSI"].iloc[0] if isinstance(last["RSI"], pd.Series) else last["RSI"]),
+            "VWAP": float(last["VWAP"].iloc[0] if isinstance(last["VWAP"], pd.Series) else last["VWAP"]),
         }
     except Exception as e:
         logging.error(f"Error fetching technicals for {ticker}: {str(e)}")
