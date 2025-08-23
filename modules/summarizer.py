@@ -16,9 +16,9 @@ Summarize for {ticker}:
 
 Technical: {ta}
 Fundamentals: {fundamentals}
-News/Social (top items included): {news}
+Full News Articles and Social Snippets (top items included): {news}
 
-Give a concise investor-ready take (≤180 words) with near-term risk/opportunity,
+Give a concise investor-ready take (≤300 words) with near-term risk/opportunity,
 and mention any obvious catalysts or caution flags.
 """
     resp = client.chat.completions.create(

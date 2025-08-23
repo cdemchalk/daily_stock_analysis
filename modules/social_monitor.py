@@ -50,6 +50,7 @@ def _reddit_client():
         client_id=os.getenv("REDDIT_CLIENT_ID"),
         client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
         user_agent=os.getenv("REDDIT_USER_AGENT", "meme-stock-monitor/0.1")
+        
     )
 
 def fetch_reddit_activity(ticker: str) -> List[Dict[str, Any]]:
@@ -178,6 +179,9 @@ def social_snapshot(ticker: str) -> Dict[str, Any]:
     hype_spike = (zres.get("z_mph", 0) >= 2.0)
     bearish_pressure = sent["neg_share"] > 0.4 and (kf.get("downgrade", 0) + kf.get("lawsuit", 0) + kf.get("offering", 0) > 0)
 
+    # Include snippets from top 5 recent examples (truncated to 200 chars)
+    recent_snippets = [i["text"][:200] for i in items[:5]]
+
     return {
         "ticker": ticker,
         "samples": len(items),
@@ -189,7 +193,8 @@ def social_snapshot(ticker: str) -> Dict[str, Any]:
         "keyword_flags": kf,
         "hype_spike": hype_spike,
         "bearish_pressure": bearish_pressure,
-        "recent_examples": items[:10]
+        "recent_examples": items[:10],
+        "snippets": recent_snippets  # Added for V1: snippets passed to prompt
     }
 
 def reddit_healthcheck():

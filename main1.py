@@ -69,7 +69,7 @@ def get_watchlist_from_key_vault():
         return ["BAC", "MSFT", "UVIX"]  # Fallback to default tickers
 
 WATCHLIST = get_watchlist_from_key_vault()
-RUN_TS = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+RUN_TS = datetime.now(timezone.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 def _social_as_news_item(ticker, social):
     if not social:
@@ -79,7 +79,9 @@ def _social_as_news_item(ticker, social):
              f"sent={social.get('avg_sentiment')}, "
              f"pos%={social.get('pos_share')}, neg%={social.get('neg_share')}, "
              f"hype_spike={social.get('hype_spike')}, bearish={social.get('bearish_pressure')}")
-    return {"title": title, "link": ""}
+    # Added for V1: Include snippets
+    snippets_str = "\nSnippets: " + "\n".join(social.get("snippets", []))
+    return {"title": title + snippets_str, "link": ""}
 
 def _fallback_html(summaries):
     rows = []
