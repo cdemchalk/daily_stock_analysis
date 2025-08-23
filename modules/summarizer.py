@@ -18,8 +18,9 @@ Technical: {ta}
 Fundamentals: {fundamentals}
 Full News Articles and Social Snippets (top items included): {news}
 
-Give a concise investor-ready take (≤300 words) with near-term risk/opportunity,
-and mention any obvious catalysts or caution flags.
+Give a concise investor-ready take (500-1000 words) with near-term risk/opportunity,
+and mention any obvious catalysts or caution flags.Also provide a short summary of
+each article that you reviewed.
 """
     resp = client.chat.completions.create(
         model="gpt-5",
