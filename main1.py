@@ -69,7 +69,7 @@ def get_watchlist_from_key_vault():
         return ["BAC", "MSFT", "UVIX"]  # Fallback to default tickers
 
 WATCHLIST = get_watchlist_from_key_vault()
-RUN_TS = datetime.now(timezone.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+RUN_TS = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 def _social_as_news_item(ticker, social):
     if not social:
