@@ -4,11 +4,9 @@
 import os, sys
 from datetime import datetime, timezone
 import logging
-import json
 
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
-from azure.storage.blob import BlobServiceClient
 
 # Configure logging for Azure
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +29,6 @@ try:
         "REDDIT_CLIENT_SECRET",
         "REDDIT_USER_AGENT",
         "KEY_VAULT_NAME",
-        "STORAGE_ACCOUNT_NAME",  # For Blob Storage
-        "STORAGE_CONTAINER_NAME",  # e.g., "daily-reports"
     ], raise_on_missing=False)
 except Exception as e:
     logging.error(f"Failed to load environment variables: {str(e)}")
@@ -106,22 +102,6 @@ def _fallback_html(summaries):
     </body></html>
     """
 
-# Upload data to Azure Blob Storage
-def upload_to_blob(ticker, data):
-    try:
-        storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
-        container_name = os.getenv("STORAGE_CONTAINER_NAME", "daily-reports")
-        if not storage_account_name:
-            logging.error("STORAGE_ACCOUNT_NAME environment variable is not set")
-            return
-        credential = DefaultAzureCredential()
-        blob_service_client = BlobServiceClient(account_url=f"https://{storage_account_name}.blob.core.windows.net/", credential=credential)
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=f"{RUN_TS.split(' ')[0]}_{ticker}.json")
-        blob_client.upload_blob(json.dumps(data, default=str), overwrite=True)
-        logging.info(f"Uploaded data for {ticker} to Blob Storage")
-    except Exception as e:
-        logging.error(f"Failed to upload data for {ticker} to Blob Storage: {str(e)}")
-
 def run():
     if not WATCHLIST:
         logging.error("No tickers found in WATCHLIST. Skipping execution.")
@@ -159,8 +139,6 @@ def run():
                 "strategy": strat,
                 "social": social,
             }
-            # Upload for V1.1
-            upload_to_blob(ticker, summaries[ticker])
         except Exception as e:
             logging.error(f"Error processing {ticker}: {str(e)}")
             summaries[ticker] = {
