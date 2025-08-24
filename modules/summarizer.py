@@ -12,15 +12,16 @@ import os
 def summarize_insights(ticker, ta, fundamentals, news):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     prompt = f"""
-Summarize for {ticker}:
+Summarize for {ticker} in a concise investor-ready take (500-800 words) with near-term risk/opportunity and obvious catalysts or caution flags.
+ Structure the response in clear paragraphs, separating key sections: Technicals, Fundamentals, Opportunities, Risks, and Catalysts.
+ Each section should start with a new paragraph and a bolded header (e.g., **Technicals**).
+ Use specific details from the provided data and avoid generic financial jargon unless directly supported.
 
-Technical: {ta}
-Fundamentals: {fundamentals}
-Full News Articles and Social Snippets (top items included): {news}
+**Technicals**: {ta}
 
-Give a concise investor-ready take (500-1000 words) with near-term risk/opportunity,
-and mention any obvious catalysts or caution flags. Seperate key sections as paragraphs 
-for easy reading and also provide a short summary of each article that you reviewed. 
+**Fundamentals**: {fundamentals}
+
+**Full News Articles and Social Snippets (top items included)**: {news}
 """
     resp = client.chat.completions.create(
         model="gpt-5",
