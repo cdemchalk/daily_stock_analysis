@@ -15,9 +15,10 @@ def load_env(dotenv_path=None, required_keys=None, raise_on_missing=True):
             raise EnvironmentError(f"Missing required env vars: {', '.join(missing_keys)}")
         return found_env
 
-    # Default to project root .env if not specified
+    # Default to project root .env (one level up from modules/)
     if dotenv_path is None:
-        dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        # Assume loadenv.py is in modules/, go up one directory
+        dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     
     env_dir = os.path.dirname(dotenv_path)
     logging.info(f"Checking for .env in: {env_dir}")

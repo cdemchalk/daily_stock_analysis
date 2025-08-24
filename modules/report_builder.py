@@ -2,7 +2,6 @@ def _fmt(v, nd=2, default="–"):
     try:
         if v is None: 
             return default
-        # handle nan-like
         if v != v:
             return default
         if isinstance(v, bool):
@@ -28,10 +27,10 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
         summary = p.get("summary") or "No summary available."
         strat = p.get("strategy") or {}
         social = p.get("social") or {}
-        ta     = p.get("technical") or {}
-        err    = strat.get("error")
+        ta = p.get("technical") or {}
+        err = strat.get("error")
 
-        # Strategy row (show error if present)
+        # Strategy row
         if err:
             strat_line = f"{_badge('strategy error', '#b00', '#fde')}: {err}"
         else:
@@ -41,7 +40,7 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
                 f"ATR14={_fmt(strat.get('ATR_14'))}"
             )
 
-        # Technical snapshot (nice to have)
+        # Technical snapshot
         tech_line = (
             f"Price={_fmt(ta.get('price'))}  "
             f"RSI={_fmt(ta.get('RSI'))}  "
@@ -50,10 +49,10 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
             f"EMA20={_fmt(ta.get('EMA_20'))}"
         )
 
-        # Social snapshot with badges
-        hype   = bool(social.get("hype_spike")) if social else False
-        hype_b = _badge("Hype Spike", "#fff", "#b00") if hype else _badge("No Hype", "#054", "#def")
-        bear   = bool(social.get("bearish_pressure")) if social else False
+        # Social snapshot
+        hype = bool(social.get("hype_spike")) if social else False
+        hype_b = _badge("Hype Spike", "#fff", "#d81") if hype else _badge("No Hype", "#054", "#def")
+        bear = bool(social.get("bearish_pressure")) if social else False
         bear_b = _badge("Bearish Pressure", "#fff", "#b00") if bear else _badge("Neutral/Pos", "#054", "#def")
 
         social_line = (
@@ -65,7 +64,7 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
             f"{hype_b} {bear_b}"
         )
 
-        # Compact keyword flags (only show those >0)
+        # Keyword flags
         kf = social.get("keyword_flags") or {}
         kf_present = ", ".join([f"{k}:{v}" for k, v in kf.items() if v])
         if kf_present:
@@ -73,10 +72,18 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
         else:
             kf_line = ""
 
+        # Split summary into sections based on bold headers and wrap in <p> tags
+        summary_sections = summary.split("**")
+        formatted_summary = ""
+        for i in range(1, len(summary_sections), 2):
+            header = summary_sections[i].strip()
+            content = summary_sections[i + 1].strip() if i + 1 < len(summary_sections) else ""
+            formatted_summary += f"<p><strong>{header}</strong><br>{content}</p>"
+
         block = f"""
         <section style="margin:0 0 18px 0;padding:10px 12px;border:1px solid #eee;border-radius:10px">
           <h3 style="margin:0 0 8px 0">{tkr}</h3>
-          <div style="margin:6px 0 10px 0"><b>Summary:</b><br/>{summary}</div>
+          <div style="margin:6px 0">{formatted_summary}</div>
           <div style="margin:6px 0"><b>Signals:</b> {strat_line}</div>
           <div style="margin:6px 0"><b>Technicals:</b> {tech_line}</div>
           <div style="margin:6px 0"><b>Social:</b> {social_line}{kf_line}</div>

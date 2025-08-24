@@ -14,13 +14,11 @@ def summarize_insights(ticker, ta, fundamentals, news):
     prompt = f"""
 Summarize for {ticker} in a concise investor-ready take (500-800 words) with near-term risk/opportunity and obvious catalysts or caution flags.
  Structure the response in clear paragraphs, separating key sections: Technicals, Fundamentals, Opportunities, Risks, and Catalysts.
- Each section should start with a new paragraph and a bolded header (e.g., **Technicals**).
+ Each section must start with a new paragraph using double newlines (\n\n) and a bolded header (e.g., **Technicals**).
  Use specific details from the provided data and avoid generic financial jargon unless directly supported.
 
-**Technicals**: {ta}
-
-**Fundamentals**: {fundamentals}
-
+**Technicals**: {ta}\n\n
+**Fundamentals**: {fundamentals}\n\n
 **Full News Articles and Social Snippets (top items included)**: {news}
 """
     resp = client.chat.completions.create(
