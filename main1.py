@@ -61,12 +61,15 @@ def get_watchlist_from_key_vault():
             tickers_str = client.get_secret("Tickers").value
             return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
         else:
-            # Local fallback to env var or .env
-            tickers_str = os.getenv("TICKERS", "BAC,MSFT,UVIX")
+            # Local fallback to env var
+            tickers_str = os.getenv("TICKERS")
+            if not tickers_str:
+                logging.error("TICKERS environment variable is not set")
+                raise ValueError("TICKERS environment variable is not set")
             return [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
     except Exception as e:
-        logging.error(f"Failed to fetch WATCHLIST from Key Vault: {str(e)}")
-        return ["BAC", "MSFT", "UVIX"]  # Fallback to default tickers
+        logging.error(f"Failed to fetch WATCHLIST: {str(e)}")
+        raise
 
 WATCHLIST = get_watchlist_from_key_vault()
 RUN_TS = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

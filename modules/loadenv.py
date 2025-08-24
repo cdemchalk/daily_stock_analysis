@@ -17,11 +17,10 @@ def load_env(dotenv_path=None, required_keys=None, raise_on_missing=True):
 
     # Default to project root .env (one level up from modules/)
     if dotenv_path is None:
-        # Assume loadenv.py is in modules/, go up one directory
         dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
     
     env_dir = os.path.dirname(dotenv_path)
-    logging.info(f"Checking for .env in: {env_dir}")
+    logging.info(f"Checking for .env at: {dotenv_path}")
 
     try:
         files = os.listdir(env_dir)
@@ -32,14 +31,19 @@ def load_env(dotenv_path=None, required_keys=None, raise_on_missing=True):
             raise FileNotFoundError(f"Directory {env_dir} not found")
         return {}
 
-    env_found = load_dotenv(dotenv_path=dotenv_path)
+    # Clear any cached environment variables
+    for key in os.environ:
+        if key in (required_keys or []):
+            os.environ.pop(key, None)
+
+    env_found = load_dotenv(dotenv_path=dotenv_path, override=True)
     if not env_found:
         logging.error(f".env file not found or failed to load at: {dotenv_path}")
         if raise_on_missing:
             raise EnvironmentError(f".env file not found at: {dotenv_path}")
         return {}
 
-    logging.info(".env file loaded successfully")
+    logging.info(f".env file loaded successfully from: {dotenv_path}")
 
     found_env = {}
     missing_keys = []

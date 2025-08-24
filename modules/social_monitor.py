@@ -25,7 +25,13 @@ MAX_ITEMS = 300
 def _now_utc(): return datetime.now(timezone.utc)
 
 def _ticker_rx(ticker: str):
-    return re.compile(rf"(\${ticker}\b|\b{ticker}\b)", re.I)
+    # Broad regex to match ticker, company names, and variations
+    ticker_patterns = {
+        "BAC": r"(\$(BAC|Bank of America)\b|\b(BAC|Bank of America|bankamerica)\b)",
+        "MSFT": r"(\$(MSFT|Microsoft)\b|\b(MSFT|Microsoft|ms)\b)",
+        "UVIX": r"(\$(UVIX|VIX ETF|Volatility ETF)\b|\b(UVIX|VIX ETF|Volatility ETF|vix)\b)"
+    }
+    return re.compile(ticker_patterns.get(ticker, rf"(\${ticker}\b|\b{ticker}\b|\b{ticker.lower()}\b)"), re.I)
 
 def _ensure_baseline():
     BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -46,27 +52,44 @@ def _z(x, m, s):
     return (x - m) / s
 
 def _reddit_client():
-    return praw.Reddit(
-        client_id=os.getenv("REDDIT_CLIENT_ID"),
-        client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
-        user_agent=os.getenv("REDDIT_USER_AGENT", "meme-stock-monitor/0.1")
-        
-    )
+    client_id = os.getenv("REDDIT_CLIENT_ID")
+    client_secret = os.getenv("REDDIT_CLIENT_SECRET")
+    user_agent = os.getenv("REDDIT_USER_AGENT", "meme-stock-monitor/1.0 by cdemchalk")
+    if not client_id or not client_secret:
+        logging.warning("Missing REDDIT_CLIENT_ID or REDDIT_CLIENT_SECRET; Reddit data unavailable")
+        return None
+    try:
+        client = praw.Reddit(
+            client_id=client_id,
+            client_secret=client_secret,
+            user_agent=user_agent
+        )
+        client.subreddit("stocks").new(limit=1)
+        logging.info(f"Reddit client initialized: {client}")
+        return client
+    except Exception as e:
+        logging.error(f"Failed to initialize Reddit client: {str(e)} (client_id={client_id[:4]}...)")
+        return None
 
 def fetch_reddit_activity(ticker: str) -> List[Dict[str, Any]]:
-    rx = _ticker_rx(ticker)
     cli = _reddit_client()
-    logging.info(f"Reddit client initialized for {ticker}: {cli}")
-    items, cutoff = [], _now_utc() - timedelta(hours=24)
+    if not cli:
+        logging.warning(f"No Reddit client for {ticker}; skipping Reddit fetch")
+        return []
+    rx = _ticker_rx(ticker)
+    items = []
+    cutoff = _now_utc() - timedelta(hours=24)
 
     for sub in SUBREDDITS:
         try:
             subreddit = cli.subreddit(sub)
+            logging.info(f"Fetching posts for {ticker} from r/{sub}")
             for post in subreddit.new(limit=MAX_ITEMS // len(SUBREDDITS)):
                 created = datetime.fromtimestamp(post.created_utc, tz=timezone.utc)
                 if created < cutoff:
                     continue
                 text = (getattr(post, "title", "") + " " + getattr(post, "selftext", "")).lower()
+                logging.debug(f"Checking post: {post.title[:50]}...")
                 if rx.search(text):
                     items.append({
                         "created": created.isoformat(),
@@ -74,36 +97,18 @@ def fetch_reddit_activity(ticker: str) -> List[Dict[str, Any]]:
                         "source": f"reddit/{sub}",
                         "url": post.url
                     })
+            logging.info(f"Found {len(items)} Reddit posts for {ticker} in r/{sub}")
         except Exception as e:
-            logging.error(f"Error fetching Reddit activity for {ticker} on {sub}: {str(e)}")
+            logging.error(f"Error fetching Reddit activity for {ticker} on r/{sub}: {str(e)}")
             continue
 
+    if not items:
+        logging.warning(f"No Reddit posts found for {ticker} in last 24 hours")
     return items
 
 def fetch_stocktwits_activity(ticker: str) -> List[Dict[str, Any]]:
-    url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        items = []
-        cutoff = _now_utc() - timedelta(hours=24)
-        for msg in data.get("messages", [])[:MAX_ITEMS]:
-            created = datetime.strptime(msg["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-            if created < cutoff:
-                continue
-            text = msg.get("body", "").lower()
-            if _ticker_rx(ticker).search(text):
-                items.append({
-                    "created": created.isoformat(),
-                    "text": text,
-                    "source": "stocktwits",
-                    "url": f"https://stocktwits.com/message/{msg['id']}"
-                })
-        return items
-    except Exception as e:
-        logging.error(f"Error fetching StockTwits activity for {ticker}: {str(e)}")
-        return []
+    logging.warning(f"StockTwits fetching disabled for {ticker}; requires API key")
+    return []
 
 def compute_sentiment(items: List[Dict[str, Any]]) -> Dict[str, float]:
     try:
@@ -167,9 +172,27 @@ def update_and_score_baseline(ticker: str, mph: float) -> Dict[str, float]:
     return {"z_mph": round(_z(mph, mean, std), 3), "mean": round(mean, 3), "std": round(std, 3)}
 
 def social_snapshot(ticker: str) -> Dict[str, Any]:
+    logging.info(f"Starting social snapshot for {ticker}")
     r_items = fetch_reddit_activity(ticker)
     s_items = fetch_stocktwits_activity(ticker)
     items = [i for i in [*r_items, *s_items] if "created" in i]
+
+    if not items:
+        logging.warning(f"No social items found for {ticker}")
+        return {
+            "ticker": ticker,
+            "samples": 0,
+            "mentions_per_hour": 0.0,
+            "z_mph": 0.0,
+            "avg_sentiment": 0.0,
+            "pos_share": 0.0,
+            "neg_share": 0.0,
+            "keyword_flags": {},
+            "hype_spike": False,
+            "bearish_pressure": False,
+            "recent_examples": [],
+            "snippets": []
+        }
 
     sent = compute_sentiment(items)
     mph = compute_velocity(items)
@@ -179,9 +202,9 @@ def social_snapshot(ticker: str) -> Dict[str, Any]:
     hype_spike = (zres.get("z_mph", 0) >= 2.0)
     bearish_pressure = sent["neg_share"] > 0.4 and (kf.get("downgrade", 0) + kf.get("lawsuit", 0) + kf.get("offering", 0) > 0)
 
-    # Include snippets from top 5 recent examples (truncated to 200 chars)
     recent_snippets = [i["text"][:200] for i in items[:5]]
 
+    logging.info(f"Social snapshot for {ticker}: {len(items)} items found")
     return {
         "ticker": ticker,
         "samples": len(items),
@@ -194,16 +217,19 @@ def social_snapshot(ticker: str) -> Dict[str, Any]:
         "hype_spike": hype_spike,
         "bearish_pressure": bearish_pressure,
         "recent_examples": items[:10],
-        "snippets": recent_snippets  # Added for V1: snippets passed to prompt
+        "snippets": recent_snippets
     }
 
 def reddit_healthcheck():
     try:
         cli = _reddit_client()
+        if not cli:
+            logging.warning("Reddit client unavailable; skipping healthcheck")
+            return
         me = cli.read_only
         logging.info(f"Reddit client ready (read_only = {me})")
+        logging.info(f"Credentials: client_id={os.getenv('REDDIT_CLIENT_ID')[:4]}..., client_secret={os.getenv('REDDIT_CLIENT_SECRET')[:4]}..., user_agent={os.getenv('REDDIT_USER_AGENT')}")
         next(cli.subreddit("stocks").new(limit=1))
         logging.info("Subreddit access OK")
     except Exception as e:
         logging.error(f"Reddit healthcheck failed: {str(e)}")
-        raise
