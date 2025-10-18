@@ -1,0 +1,207 @@
+# 1. Set subscription
+az account set --subscription 88c3a58c-eaf8-4f14-8e30-8564945b8bde
+
+# 2. Create resource group
+az group create --name rg-stocks --location centralus
+
+{
+  "id": "/subscriptions/88c3a58c-eaf8-4f14-8e30-8564945b8bde/resourceGroups/rg-stocks",
+  "location": "centralus",
+  "managedBy": null,
+  "name": "rg-stocks",
+  "properties": {
+    "provisioningState": "Succeeded"
+  },
+  "tags": null,
+  "type": "Microsoft.Resources/resourceGroups"
+}
+
+
+az provider register --namespace Microsoft.Web --subscription 88c3a58c-eaf8-4f14-8e30-8564945b8bde
+az provider show --namespace Microsoft.Web --subscription 88c3a58c-eaf8-4f14-8e30-8564945b8bde --query registrationState -o tsv
+
+# 3. Create App Service Plan (for Function App)
+az functionapp plan create --resource-group rg-stocks --name ASP-rgstocks-8c6b --sku B1 --is-linux --location centralus
+
+{
+  "asyncScalingEnabled": false,
+  "elasticScaleEnabled": false,
+  "extendedLocation": null,
+  "freeOfferExpirationTime": "2025-11-17T16:03:35.493333",
+  "geoRegion": "Central US",
+  "hostingEnvironmentProfile": null,
+  "hyperV": false,
+  "id": "/subscriptions/88c3a58c-eaf8-4f14-8e30-8564945b8bde/resourceGroups/rg-stocks/providers/Microsoft.Web/serverfarms/ASP-rgstocks-8c6b",
+  "isSpot": false,
+  "isXenon": false,
+  "kind": "linux",
+  "kubeEnvironmentProfile": null,
+  "location": "centralus",
+  "maximumElasticWorkerCount": 1,
+  "maximumNumberOfWorkers": 0,
+  "name": "ASP-rgstocks-8c6b",
+  "numberOfSites": 0,
+  "numberOfWorkers": 1,
+  "perSiteScaling": false,
+  "provisioningState": "Succeeded",
+  "reserved": true,
+  "resourceGroup": "rg-stocks",
+  "sku": {
+    "capabilities": null,
+    "capacity": 1,
+    "family": "B",
+    "locations": null,
+    "name": "B1",
+    "size": "B1",
+    "skuCapacity": null,
+    "tier": "Basic"
+  },
+  "spotExpirationTime": null,
+  "status": "Ready",
+  "subscription": "88c3a58c-eaf8-4f14-8e30-8564945b8bde",
+  "tags": null,
+  "targetWorkerCount": 0,
+  "targetWorkerSizeId": 0,
+  "type": "Microsoft.Web/serverfarms",
+  "workerTierName": null,
+  "zoneRedundant": false
+}
+
+
+
+# 4. Create Function App (Python 3.12)
+az storage account create --name dailystockstorage --resource-group rg-stocks --location centralus --sku Standard_LRS
+
+chris [ ~ ]$ az storage account create --name dailystockstorage --resource-group rg-stocks --location centralus --sku Standard_LRS
+{
+  "accessTier": "Hot",
+  "accountMigrationInProgress": null,
+  "allowBlobPublicAccess": false,
+  "allowCrossTenantReplication": false,
+  "allowSharedKeyAccess": null,
+  "allowedCopyScope": null,
+  "azureFilesIdentityBasedAuthentication": null,
+  "blobRestoreStatus": null,
+  "creationTime": "2025-10-18T16:12:08.578424+00:00",
+  "customDomain": null,
+  "defaultToOAuthAuthentication": null,
+  "dnsEndpointType": null,
+  "enableExtendedGroups": null,
+  "enableHttpsTrafficOnly": true,
+  "enableNfsV3": null,
+  "encryption": {
+    "encryptionIdentity": null,
+    "keySource": "Microsoft.Storage",
+    "keyVaultProperties": null,
+    "requireInfrastructureEncryption": null,
+    "services": {
+      "blob": {
+        "enabled": true,
+        "keyType": "Account",
+        "lastEnabledTime": "2025-10-18T16:12:08.750298+00:00"
+      },
+      "file": {
+        "enabled": true,
+        "keyType": "Account",
+        "lastEnabledTime": "2025-10-18T16:12:08.750298+00:00"
+      },
+      "queue": null,
+      "table": null
+    }
+  },
+  "extendedLocation": null,
+  "failoverInProgress": null,
+  "geoReplicationStats": null,
+  "id": "/subscriptions/88c3a58c-eaf8-4f14-8e30-8564945b8bde/resourceGroups/rg-stocks/providers/Microsoft.Storage/storageAccounts/dailystockstorage",
+  "identity": null,
+  "immutableStorageWithVersioning": null,
+  "isHnsEnabled": null,
+  "isLocalUserEnabled": null,
+  "isSftpEnabled": null,
+  "isSkuConversionBlocked": null,
+  "keyCreationTime": {
+    "key1": "2025-10-18T16:12:08.734673+00:00",
+    "key2": "2025-10-18T16:12:08.734673+00:00"
+  },
+  "keyPolicy": null,
+  "kind": "StorageV2",
+  "largeFileSharesState": null,
+  "lastGeoFailoverTime": null,
+  "location": "centralus",
+  "minimumTlsVersion": "TLS1_0",
+  "name": "dailystockstorage",
+  "networkRuleSet": {
+    "bypass": "AzureServices",
+    "defaultAction": "Allow",
+    "ipRules": [],
+    "ipv6Rules": [],
+    "resourceAccessRules": null,
+    "virtualNetworkRules": []
+  },
+  "primaryEndpoints": {
+    "blob": "https://dailystockstorage.blob.core.windows.net/",
+    "dfs": "https://dailystockstorage.dfs.core.windows.net/",
+    "file": "https://dailystockstorage.file.core.windows.net/",
+    "internetEndpoints": null,
+    "microsoftEndpoints": null,
+    "queue": "https://dailystockstorage.queue.core.windows.net/",
+    "table": "https://dailystockstorage.table.core.windows.net/",
+    "web": "https://dailystockstorage.z19.web.core.windows.net/"
+  },
+  "primaryLocation": "centralus",
+  "privateEndpointConnections": [],
+  "provisioningState": "Succeeded",
+  "publicNetworkAccess": null,
+  "resourceGroup": "rg-stocks",
+  "routingPreference": null,
+  "sasPolicy": null,
+  "secondaryEndpoints": null,
+  "secondaryLocation": null,
+  "sku": {
+    "name": "Standard_LRS",
+    "tier": "Standard"
+  },
+  "statusOfPrimary": "available",
+  "statusOfSecondary": null,
+  "storageAccountSkuConversionStatus": null,
+  "tags": {},
+  "type": "Microsoft.Storage/storageAccounts"
+}
+
+# 5. Create Key Vault with RBAC
+az keyvault create --name stockdailyvault20172025 --resource-group rg-stocks --location centralus --enable-rbac-authorization true
+
+# 6. Set Tickers secret in Key Vault (mirror original value)
+az keyvault secret set --vault-name stockdailyvault20172025 --name Tickers --value "BAC,MSFT,UVIX"
+
+# 7. Enable managed identity for Function App
+az functionapp identity assign --name stock-daily-runner --resource-group rg-stocks
+
+# 8. Get managed identity principal ID and assign role for Key Vault
+principalId=$(az functionapp identity show --name stock-daily-runner --resource-group rg-stocks --query principalId -o tsv)
+az role assignment create --role "Key Vault Secrets User" --assignee $principalId --scope /subscriptions/<new-subscription-id>/resourceGroups/rg-stocks/providers/Microsoft.KeyVault/vaults/stockdailyvault20172025
+
+# 9. Set Function App settings (mirror original values; replace placeholders)
+az functionapp config appsettings set --resource-group rg-stocks --name stock-daily-runner --settings "KEY_VAULT_NAME=stockdailyvault20172025"
+az functionapp config appsettings set --resource-group rg-stocks --name stock-daily-runner --settings "OPENAI_API_KEY=<your-openai-api-key>" "EMAIL_USER=<your-email>" "EMAIL_PASS=<your-app-password>" "REDDIT_CLIENT_ID=<your-reddit-id>" "REDDIT_CLIENT_SECRET=<your-reddit-secret>" "REDDIT_USER_AGENT=meme-stock-monitor/1.0 by cdemchalk" "SOCIAL_BASELINE_PATH=/home/site/wwwroot/social_baseline.json"
+
+# 10. Create Storage Account and container (for V1.1; mirror original)
+az storage account create --name dailystockstorage --resource-group rg-stocks --location centralus --sku Standard_LRS
+az storage container create --name daily-reports --account-name dailystockstorage --auth-mode login
+az role assignment create --role "Storage Blob Data Contributor" --assignee $principalId --scope /subscriptions/<new-subscription-id>/resourceGroups/rg-stocks/providers/Microsoft.Storage/storageAccounts/dailystockstorage
+
+# 11. Set Storage settings in Function App (for V1.1)
+az functionapp config appsettings set --resource-group rg-stocks --name stock-daily-runner --settings "STORAGE_ACCOUNT_NAME=dailystockstorage" "STORAGE_CONTAINER_NAME=daily-reports"
+
+# 12. Deploy code from GitHub (mirror original code)
+git clone <your-github-repo-url> # e.g., https://github.com/<username>/daily_stock_analysis.git
+cd <repo-directory> # e.g., cd daily_stock_analysis
+zip -r functionapp.zip . -x "*.git*" "*.vscode*" "*__pycache__*"
+az functionapp deployment source config-zip --resource-group rg-stocks --name stock-daily-runner --src functionapp.zip
+
+# 13. Restart and test
+az functionapp restart --resource-group rg-stocks --name stock-daily-runner
+az functionapp function invoke --resource-group rg-stocks --name stock-daily-runner --function-name DailyRunner
+
+# 14. Check logs
+az monitor app-insights query --app stock-daily-runner --resource-group rg-stocks --analytics-query "traces | where timestamp > ago(1h) | order by timestamp desc | project timestamp, message, severityLevel" --output table
