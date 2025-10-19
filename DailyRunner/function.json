@@ -1,5 +1,6 @@
+$functionJson = @"
 {
-  "scriptFile": "__init__.py",
+  "scriptFile": "../main1.py",
   "bindings": [
     {
       "name": "mytimer",
@@ -9,3 +10,5 @@
     }
   ]
 }
+"@
+Set-Content -Path E:\github\daily_stock_analysis\DailyRunner\function.json -Value $functionJson
