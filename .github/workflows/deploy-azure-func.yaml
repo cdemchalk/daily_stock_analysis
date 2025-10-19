@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  id-token: write  # Required for Azure login
+  id-token: write # Required for Azure login
 env:
   FUNCTIONAPP_DIR: "."
   PYTHON_VERSION: "3.12"
@@ -141,7 +141,7 @@ jobs:
           ls -R .python_packages/lib/site-packages > packages.txt
           cat packages.txt
           grep -q "^yfinance$" packages.txt || { echo "ERROR: yfinance directory not found in .python_packages" >&2; exit 1; }
-          grep -q "^peewee\.py$" packages.txt || { echo "ERROR: peewee.py file not found in .python_packages" >&2; exit 1; }
+          grep -q "^peewee\.py$" packages.txt || { echo "ERROR: peewee.py file not in .python_packages" >&2; exit 1; }
           echo "yfinance and peewee found in .python_packages ✅"
       - name: Create zip package
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
@@ -149,14 +149,17 @@ jobs:
         run: |
           set -euo pipefail
           echo "Creating release.zip..."
-          zip -r release.zip . -x "venv/*" ".git/*" "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
+          zip -r release.zip host.json main1.py modules/ requirements.txt .python_packages/ -x "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
           ls -l release.zip
           echo "Verifying zip contents..."
           unzip -l release.zip > zip_contents.txt
           cat zip_contents.txt
+          grep -q "host.json" zip_contents.txt || { echo "ERROR: host.json not in release.zip" >&2; exit 1; }
+          grep -q "main1.py" zip_contents.txt || { echo "ERROR: main1.py not in release.zip" >&2; exit 1; }
+          grep -q "requirements.txt" zip_contents.txt || { echo "ERROR: requirements.txt not in release.zip" >&2; exit 1; }
           grep -q ".python_packages/lib/site-packages/yfinance/" zip_contents.txt || { echo "ERROR: yfinance directory not in release.zip" >&2; exit 1; }
-          grep -q ".python_packages/lib/site-packages/peewee\.py" zip_contents.txt || { echo "ERROR: peewee.py file not in release.zip" >&2; exit 1; }
-          echo "yfinance and peewee found in release.zip ✅"
+          grep -q ".python_packages/lib/site-packages/peewee\.py" zip_contents.txt || { echo "ERROR: peewee.py not in release.zip" >&2; exit 1; }
+          echo "Zip contents verified ✅"
       - name: Upload artifact for debugging
         uses: actions/upload-artifact@v4
         with:
@@ -171,16 +174,16 @@ jobs:
         run: |
           set -euo pipefail
           APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
-          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          RG="rg-stocks"
           az webapp config appsettings set -g "$RG" -n "$APP" --settings WEBSITE_RUN_FROM_PACKAGE=1
           echo "Waiting for configuration to apply..."
-          sleep 10  # Allow time for Azure to propagate the setting
+          sleep 10
       - name: Verify WEBSITE_RUN_FROM_PACKAGE
         shell: bash
         run: |
           set -euo pipefail
           APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
-          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          RG="rg-stocks"
           SETTING=$(az webapp config appsettings list --name "${APP}" --resource-group "${RG}" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value" -o tsv)
           if [ "$SETTING" != "1" ]; then
             echo "ERROR: WEBSITE_RUN_FROM_PACKAGE is not set to 1" >&2
@@ -192,7 +195,7 @@ jobs:
         run: |
           set -euo pipefail
           APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
-          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          RG="rg-stocks"
           az webapp config appsettings set -g "$RG" -n "$APP" --settings \
             SCM_DO_BUILD_DURING_DEPLOYMENT=false \
             ENABLE_ORYX_BUILD=false
@@ -206,7 +209,7 @@ jobs:
         run: |
           set -euo pipefail
           APP="${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
-          RG="$(az functionapp list --query "[?name=='${APP}'].resourceGroup" -o tsv)"
+          RG="rg-stocks"
           HOST="$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName" -o tsv)"
           echo "Default domain: https://${HOST}"
           az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || true
