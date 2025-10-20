@@ -1,6 +1,6 @@
 $functionJson = @"
 {
-  "scriptFile": "../main1.py",
+  "scriptFile": "main1.py",
   "bindings": [
     {
       "name": "mytimer",
@@ -10,3 +10,6 @@ $functionJson = @"
     }
   ]
 }
+"@
+Move-Item -Path E:\github\daily_stock_analysis\main1.py -Destination E:\github\daily_stock_analysis\DailyRunner\main1.py -Force
+Set-Content -Path E:\github\daily_stock_analysis\DailyRunner\function.json -Value $functionJson
