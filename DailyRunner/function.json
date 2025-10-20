@@ -10,5 +10,3 @@ $functionJson = @"
     }
   ]
 }
-"@
-Set-Content -Path E:\github\daily_stock_analysis\DailyRunner\function.json -Value $functionJson
