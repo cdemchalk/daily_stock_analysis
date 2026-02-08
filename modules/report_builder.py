@@ -27,10 +27,10 @@ def build_html_report(summaries, run_timestamp=None, **kwargs):
         blocks = []
 
         for tkr, p in summaries.items():
-            summary = p.get("summary", "No summary available.")
-            strat = p.get("strategy", {})
-            social = p.get("social", {})
-            ta = p.get("technical", {})
+            summary = p.get("summary") or "No summary available."
+            strat = p.get("strategy") or {}
+            social = p.get("social") or {}
+            ta = p.get("technical") or {}
 
             # Strategy row
             strat_line = (
