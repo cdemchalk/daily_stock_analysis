@@ -201,9 +201,7 @@ Also computes ATR(14) for volatility context. Uses robust 3-tier data fetching w
 
 ## Known Issues & Observations
 
-1. **CRITICAL — CI/CD missing DailyRunner/ in release.zip:** Line 152 of `deploy-azure-func.yaml` creates `release.zip` with `host.json main1.py modules/ requirements.txt .python_packages/` but does **NOT** include `DailyRunner/`. Future CI/CD deploys will break the function. Must add `DailyRunner/` to the zip command.
-
-2. **SECURITY — .env still in repo working tree:** `.gitignore` excludes `.env`, but verify it was never committed to git history. Contains plaintext API keys for OpenAI, Gmail, Reddit, and Key Vault.
+1. **SECURITY — .env still in repo working tree:** `.gitignore` excludes `.env`, but verify it was never committed to git history. Contains plaintext API keys for OpenAI, Gmail, Reddit, and Key Vault.
 
 3. **social_baseline.json in /tmp is ephemeral:** On Azure, `/tmp` is cleared on function restarts. Baseline history (30-day rolling averages) will be lost. Consider Azure Blob Storage or Table Storage for persistence.
 
@@ -217,7 +215,7 @@ Also computes ATR(14) for volatility context. Uses robust 3-tier data fetching w
 
 8. **loadenv clears env vars before reload:** Lines 35-37 of `loadenv.py` pop matching keys from `os.environ` before loading .env. In Azure (where env vars come from App Settings), this code path is skipped, but locally it forces a fresh load with `override=True`.
 
-9. **Azure namespace package init required on deploy:** When building `.python_packages/`, an `azure/__init__.py` with `extend_path` must exist so that `azure.identity` and `azure.keyvault` (in .python_packages) can coexist with `azure.functions` (system-installed). Without this, `ModuleNotFoundError: No module named 'azure.identity'` occurs. The CI/CD `pip install --target` step may overwrite or omit this file.
+9. **Azure namespace package init required on deploy:** When building `.python_packages/`, an `azure/__init__.py` with `extend_path` must exist so that `azure.identity` and `azure.keyvault` (in .python_packages) can coexist with `azure.functions` (system-installed). Without this, `ModuleNotFoundError: No module named 'azure.identity'` occurs. The CI/CD pipeline now handles this automatically after `pip install --target`.
 
 ---
 
@@ -354,9 +352,7 @@ az webapp config appsettings set --name stock-daily-runner --resource-group rg-s
 
 ## Pending Work
 
-1. **Fix CI/CD zip to include DailyRunner/:** Add `DailyRunner/` to the `zip -r release.zip` command in `deploy-azure-func.yaml` line 152. Without this, future CI/CD deploys will remove the function.
-2. **Commit and push local changes:** All fixes from the 2026-02-07 session are local only. Need to commit and push to `main` so CI/CD picks them up.
-3. **Ensure CI/CD creates azure namespace __init__.py:** Add a step after `pip install --target` to create the `azure/__init__.py` with `extend_path`. Otherwise the namespace conflict will recur on CI/CD deploys.
+1. **Verify CI/CD deploy succeeds:** The yaml now includes `DailyRunner/` in the zip and creates the azure namespace `__init__.py`. Monitor the next GitHub Actions run to confirm it deploys correctly.
 
 ---
 

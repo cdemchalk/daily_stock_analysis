@@ -133,6 +133,9 @@ jobs:
               sys.exit(1)
           print("Vendored wheels present ✅")
           PY
+          echo "Ensuring azure namespace package init..."
+          printf 'from pkgutil import extend_path\n__path__ = extend_path(__path__, __name__)\n' > "$TARGET/azure/__init__.py"
+          echo "azure namespace __init__.py created ✅"
       - name: Verify .python_packages contents
         working-directory: ${{ env.FUNCTIONAPP_DIR }}
         run: |
@@ -149,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Creating release.zip..."
-          zip -r release.zip host.json main1.py modules/ requirements.txt .python_packages/ -x "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
+          zip -r release.zip host.json main1.py modules/ DailyRunner/ requirements.txt .python_packages/ -x "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
           ls -l release.zip
           echo "Verifying zip contents..."
           unzip -l release.zip > zip_contents.txt
@@ -159,6 +162,8 @@ jobs:
           grep -q "requirements.txt" zip_contents.txt || { echo "ERROR: requirements.txt not in release.zip" >&2; exit 1; }
           grep -q ".python_packages/lib/site-packages/yfinance/" zip_contents.txt || { echo "ERROR: yfinance directory not in release.zip" >&2; exit 1; }
           grep -q ".python_packages/lib/site-packages/peewee\.py" zip_contents.txt || { echo "ERROR: peewee.py not in release.zip" >&2; exit 1; }
+          grep -q "DailyRunner/function.json" zip_contents.txt || { echo "ERROR: DailyRunner/function.json not in release.zip" >&2; exit 1; }
+          grep -q "DailyRunner/__init__.py" zip_contents.txt || { echo "ERROR: DailyRunner/__init__.py not in release.zip" >&2; exit 1; }
           echo "Zip contents verified ✅"
       - name: Upload artifact for debugging
         uses: actions/upload-artifact@v4
