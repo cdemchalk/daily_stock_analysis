@@ -334,21 +334,58 @@ az functionapp restart --name stock-daily-runner --resource-group rg-stocks
 ## Git Info
 
 - **Current branch:** `main`
-- **Branches:** `main`, `backup-pre-override`
-- **Remote:** `origin` (GitHub)
+- **Branches:** `main`, `feature/options-engine` (merged), `backup-pre-override`
+- **Remote:** `origin` → `https://github.com/cdemchalk/daily_stock_analysis.git`
+- **Latest commit on main:** `8d3a597` — "Add options strategy engine, Black-Scholes backtester, and enhanced pipeline"
+
+---
+
+## Deployment History
+
+| Date | Commit | What Changed | CI/CD Status |
+|------|--------|-------------|--------------|
+| 2026-02-10 | `8d3a597` | Options engine, backtester, full pipeline overhaul | **Deployed successfully** (run #21863809717) |
+| 2026-02-08 | `d6fab40` | CI/CD fix: DailyRunner/ in release zip | Deployed successfully |
+| 2026-02-08 | `dd32448` | Azure Function deployment fix + report generation | Deployed successfully |
+
+---
+
+## Verification Results (2026-02-09)
+
+- **COF single-ticker run:** CASH_SECURED_PUT recommended at 75% confidence
+- **Backtest results:** 4 signals, 3 trades, 100% win rate, +3.6% avg return
+- **Email delivery:** Confirmed working with strategy card + backtest card
+- **BS pricing validation:** Put-call parity verified (diff=0.000000)
+- **All Python files:** Pass AST syntax check
 
 ---
 
 ## Pending Work
 
-1. **IV Rank from history:** Use `data/iv_history.csv` (now auto-populated daily) to compute 52-week IV Rank once sufficient data accumulates.
+1. **IV Rank from history:** Use `data/iv_history.csv` (now auto-populated daily) to compute 52-week IV Rank once sufficient data accumulates (~52 weeks of data needed).
 2. **Multi-timeframe analysis:** Add weekly and monthly timeframe indicators.
-3. **Sentiment source:** StockTwits API currently returning 403. Evaluate alternative sentiment sources.
+3. **Sentiment source:** StockTwits API currently returning 403. Evaluate alternative sentiment sources (Reddit via official API, Finviz, or Twitter/X sentiment).
 4. **Remove legacy deps:** Once StockTwits replacement is confirmed, remove `praw` and `nltk` from requirements.txt.
-5. **Azure Blob persistence for IV history:** Currently local CSV; future enhancement to persist on Azure.
+5. **Azure Blob persistence for IV history:** Currently local CSV (ephemeral on Azure /tmp); need Azure Blob Storage for persistent IV data.
+6. **Multi-ticker verification:** Run `python main1.py BAC MSFT UVIX` to verify diverse ticker coverage (different sectors, high-IV ETFs).
+7. **Monitor Monday email:** Verify the 2026-02-10 1PM UTC scheduled run delivers the new enhanced report format.
 
 ---
 
-*Last reviewed: 2026-02-09 by Claude Code*
+## How to Resume This Project
+
+When returning to this project in a new Claude Code session:
+
+1. **Navigate:** `cd /mnt/e/github/daily_stock_analysis`
+2. **Read this file:** Claude Code auto-reads CLAUDE.md for project context
+3. **Check deployment:** `gh run list --limit 3` to see recent CI/CD status
+4. **Check Azure logs:** Use the App Insights queries in the Azure CLI section above
+5. **Test locally:** `python main1.py COF --no-email` for a quick local test
+6. **Pending work** is listed above — pick up from there
+
+---
+
+*Last reviewed: 2026-02-10 by Claude Code*
 *Pipeline overhaul: 2026-02-08 — added options, sentiment, anchored VWAP, dashboard report, HTTP trigger, CLI*
 *Options engine: 2026-02-09 — 7-strategy engine, BS backtesting, IV persistence, strategy cards in report*
+*Production deployment: 2026-02-10 — merged feature/options-engine to main, CI/CD deployed to Azure*
