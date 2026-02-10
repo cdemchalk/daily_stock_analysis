@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os, sys
+import os, sys, json, argparse
 from datetime import datetime, timezone
 import logging
 
@@ -24,10 +24,6 @@ try:
         "OPENAI_API_KEY",
         "EMAIL_USER",
         "EMAIL_PASS",
-        # Reddit optional
-        "REDDIT_CLIENT_ID",
-        "REDDIT_CLIENT_SECRET",
-        "REDDIT_USER_AGENT",
         "KEY_VAULT_NAME",
     ], raise_on_missing=False)
 except Exception as e:
@@ -37,18 +33,40 @@ from technical import get_technical_indicators
 from fundamentals import get_fundamentals
 from news import fetch_news
 from strategy import evaluate_strategy
-try:
-    from social_monitor import social_snapshot, reddit_healthcheck
-except Exception:
-    social_snapshot = None
-    reddit_healthcheck = None
-
 from summarizer import summarize_insights
+
 try:
     from report_builder import build_html_report
 except Exception:
     build_html_report = None
+
+try:
+    from options_monitor import get_options_data
+except Exception:
+    get_options_data = None
+
+try:
+    from options_strategy import recommend_strategies
+except Exception:
+    recommend_strategies = None
+
+try:
+    from backtester import backtest_strategy
+except Exception:
+    backtest_strategy = None
+
+try:
+    from backtester_entry_exit import backtest_entry_exit
+except Exception:
+    backtest_entry_exit = None
+
+try:
+    from market_sentiment import get_market_sentiment
+except Exception:
+    get_market_sentiment = None
+
 from emailer import send_email
+
 
 # Fetch WATCHLIST from Azure Key Vault (Azure) or env var (local)
 def get_watchlist_from_key_vault():
@@ -71,33 +89,20 @@ def get_watchlist_from_key_vault():
         logging.error(f"Failed to fetch WATCHLIST: {str(e)}")
         raise
 
-WATCHLIST = get_watchlist_from_key_vault()
-RUN_TS = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-def _social_as_news_item(ticker, social):
-    if not social:
-        return {"title": f"{ticker} – Social snapshot unavailable", "link": ""}
-    title = (f"{ticker} social: mph={social.get('mentions_per_hour')}, "
-             f"z_mph={social.get('z_mph')}, "
-             f"sent={social.get('avg_sentiment')}, "
-             f"pos%={social.get('pos_share')}, neg%={social.get('neg_share')}, "
-             f"hype_spike={social.get('hype_spike')}, bearish={social.get('bearish_pressure')}")
-    snippets_str = "\nSnippets: " + "\n".join(social.get("snippets", []))
-    return {"title": title + snippets_str, "link": ""}
-
-def _fallback_html(summaries):
+def _fallback_html(summaries, run_ts):
     rows = []
     for tkr, payload in summaries.items():
         rows.append(f"""
         <tr>
           <td style="font-weight:600">{tkr}</td>
-          <td><pre style="white-space:pre-wrap;margin=0">{payload.get('summary','')}</pre></td>
+          <td><pre style="white-space:pre-wrap;margin:0">{payload.get('summary','')}</pre></td>
         </tr>
         """)
     return f"""
     <html><body>
       <h2>Daily Stock Report</h2>
-      <div style="color:#666">Generated: {RUN_TS}</div>
+      <div style="color:#666">Generated: {run_ts}</div>
       <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;margin-top:12px">
         <thead><tr><th>Ticker</th><th>Summary</th></tr></thead>
         <tbody>{''.join(rows)}</tbody>
@@ -105,56 +110,202 @@ def _fallback_html(summaries):
     </body></html>
     """
 
-def run():
-    if not WATCHLIST:
-        logging.error("No tickers found in WATCHLIST. Skipping execution.")
-        return
-    logging.info(f"Starting DailyRunner for tickers: {WATCHLIST}")
-    if callable(reddit_healthcheck):
-        try:
-            reddit_healthcheck()
-            logging.info("Reddit healthcheck completed")
-        except Exception as e:
-            logging.error(f"Reddit healthcheck failed: {str(e)}")
+
+def run(tickers=None, send_email_flag=True, output_format="html",
+        backtest=False, backtest_only=False):
+    """Main pipeline orchestrator.
+
+    Args:
+        tickers: List of ticker symbols. None = load from Key Vault/env.
+        send_email_flag: If True, send email report. If False, return output only.
+        output_format: "html" returns HTML string, "json" returns JSON-serializable dict.
+        backtest: If True, run backtests after analysis and include in report.
+        backtest_only: If True, run backtests only (no email, print to terminal).
+
+    Returns:
+        HTML string or dict depending on output_format (only when send_email_flag=False).
+    """
+    if backtest_only:
+        send_email_flag = False
+    run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    if tickers is None:
+        tickers = get_watchlist_from_key_vault()
+
+    if not tickers:
+        logging.error("No tickers found. Skipping execution.")
+        return None
+
+    logging.info(f"Starting DailyRunner for tickers: {tickers}")
 
     summaries = {}
-    for ticker in WATCHLIST:
+    for ticker in tickers:
         try:
             logging.info(f"Processing ticker: {ticker}")
-            ta = get_technical_indicators(ticker)
-            logging.info(f"Technical indicators for {ticker}: {ta}")
+
+            # 1. Fundamentals first (provides last_earnings_date for anchored VWAP)
             fa = get_fundamentals(ticker)
-            logging.info(f"Fundamentals for {ticker}: {fa}")
+            logging.info(f"Fundamentals for {ticker}: done")
+
+            # 2. Technicals with anchored VWAP
+            last_earnings = fa.get("last_earnings_date") if fa and not fa.get("error") else None
+            ta = get_technical_indicators(ticker, last_earnings_date=last_earnings)
+            logging.info(f"Technical indicators for {ticker}: done")
+
+            # 3. News
             news_items = fetch_news(ticker) or []
             logging.info(f"News items for {ticker}: {len(news_items)}")
+
+            # 4. Strategy
             strat = evaluate_strategy(ticker)
-            logging.info(f"Strategy for {ticker}: {strat}")
-            social = social_snapshot(ticker) if social_snapshot else None
-            logging.info(f"Social snapshot for {ticker}: {social}")
-            news_items.append(_social_as_news_item(ticker, social))
-            summary_text = summarize_insights(ticker, ta, fa, news_items)
-            logging.info(f"Summary for {ticker}: {summary_text}")
+            logging.info(f"Strategy for {ticker}: done")
+
+            # 5. Options (with chain data for strategy engine)
+            options_data = None
+            calls_df = None
+            puts_df = None
+            if callable(get_options_data):
+                try:
+                    stock_price = ta.get("price") if ta and not ta.get("error") else None
+                    options_data = get_options_data(ticker, stock_price=stock_price, return_chain=True)
+                    calls_df = options_data.pop("calls_df", None)
+                    puts_df = options_data.pop("puts_df", None)
+                    logging.info(f"Options for {ticker}: done")
+                except Exception as e:
+                    logging.error(f"Options error for {ticker}: {str(e)}")
+
+            # 5b. Options strategy recommendations
+            strategy_recs = None
+            if callable(recommend_strategies) and options_data and not options_data.get("error"):
+                try:
+                    strategy_recs = recommend_strategies(options_data, ta, fa, calls_df, puts_df)
+                    if strategy_recs:
+                        top = strategy_recs[0]
+                        logging.info(f"Strategy for {ticker}: {top['strategy_name']} "
+                                     f"({top['status']}, {top['confidence']:.0%})")
+                except Exception as e:
+                    logging.error(f"Strategy engine error for {ticker}: {str(e)}")
+
+            # 5c. Backtesting (optional)
+            backtest_results = None
+            if (backtest or backtest_only) and strategy_recs:
+                backtest_results = {}
+                # Backtest top recommended strategy
+                if callable(backtest_strategy):
+                    try:
+                        top_strat_name = strategy_recs[0]["strategy_name"]
+                        backtest_results["strategy"] = backtest_strategy(ticker, top_strat_name)
+                        logging.info(f"Backtest {top_strat_name} for {ticker}: done")
+                    except Exception as e:
+                        logging.error(f"Backtest strategy error for {ticker}: {str(e)}")
+
+                # Backtest entry/exit signals
+                if callable(backtest_entry_exit):
+                    try:
+                        backtest_results["entry_exit"] = backtest_entry_exit(ticker)
+                        logging.info(f"Backtest entry/exit for {ticker}: done")
+                    except Exception as e:
+                        logging.error(f"Backtest entry/exit error for {ticker}: {str(e)}")
+
+                if backtest_only:
+                    print(f"\n{'='*60}")
+                    print(f"BACKTEST RESULTS: {ticker}")
+                    print(f"{'='*60}")
+                    for k, v in backtest_results.items():
+                        print(f"\n--- {k.upper()} ---")
+                        if isinstance(v, dict):
+                            for vk, vv in v.items():
+                                print(f"  {vk}: {vv}")
+
+            # 6. Sentiment
+            sentiment_data = None
+            if callable(get_market_sentiment):
+                try:
+                    sentiment_data = get_market_sentiment(ticker)
+                    logging.info(f"Sentiment for {ticker}: done")
+                except Exception as e:
+                    logging.error(f"Sentiment error for {ticker}: {str(e)}")
+
+            # 7. GPT summary (skip if backtest-only)
+            if backtest_only:
+                summary_text = "Backtest-only mode — GPT summary skipped."
+            else:
+                summary_text = summarize_insights(
+                    ticker, ta, fa, news_items,
+                    options=options_data,
+                    sentiment=sentiment_data,
+                    strategy=strat,
+                    options_strategies=strategy_recs,
+                )
+            logging.info(f"Summary for {ticker}: done")
+
             summaries[ticker] = {
                 "summary": summary_text,
                 "technical": ta,
                 "fundamentals": fa,
                 "news": news_items,
                 "strategy": strat,
-                "social": social,
+                "options": options_data,
+                "sentiment": sentiment_data,
+                "options_strategies": strategy_recs,
+                "backtest": backtest_results,
             }
         except Exception as e:
             logging.error(f"Error processing {ticker}: {str(e)}")
             summaries[ticker] = {
-                "summary": f"⚠️ Error processing {ticker}: {e}",
+                "summary": f"Error processing {ticker}: {e}",
                 "technical": None, "fundamentals": None, "news": [],
-                "strategy": None, "social": None,
+                "strategy": None, "options": None, "sentiment": None,
+                "options_strategies": None, "backtest": None,
             }
 
+    # Output
+    if output_format == "json":
+        # Make JSON-safe (strip non-serializable objects from news)
+        json_safe = {}
+        for tkr, data in summaries.items():
+            json_safe[tkr] = {
+                "summary": data.get("summary"),
+                "technical": data.get("technical"),
+                "fundamentals": data.get("fundamentals"),
+                "strategy": data.get("strategy"),
+                "options": data.get("options"),
+                "sentiment": data.get("sentiment"),
+                "options_strategies": data.get("options_strategies"),
+                "backtest": data.get("backtest"),
+                "news": [{"title": n.get("title", ""), "link": n.get("link", "")}
+                         for n in (data.get("news") or [])],
+            }
+        if send_email_flag:
+            html = build_html_report(summaries, run_timestamp=run_ts) if callable(build_html_report) else _fallback_html(summaries, run_ts)
+            send_email(html)
+            logging.info("Email sent successfully")
+        return {"run_timestamp": run_ts, "tickers": tickers, "data": json_safe}
+
+    # HTML output
     logging.info("Generating HTML report")
-    html = build_html_report(summaries, run_timestamp=RUN_TS) if callable(build_html_report) else _fallback_html(summaries)
-    logging.info("Sending email with report")
-    send_email(html)
-    logging.info("Email sent successfully")
+    html = build_html_report(summaries, run_timestamp=run_ts) if callable(build_html_report) else _fallback_html(summaries, run_ts)
+
+    if send_email_flag:
+        logging.info("Sending email with report")
+        send_email(html)
+        logging.info("Email sent successfully")
+
+    return html
+
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Daily Stock Analysis Pipeline")
+    parser.add_argument("tickers", nargs="*", help="Ticker symbols (e.g., COF BAC MSFT)")
+    parser.add_argument("--backtest", action="store_true",
+                        help="Run backtests and include results in report")
+    parser.add_argument("--backtest-only", action="store_true",
+                        help="Run backtests only, no email, print to terminal")
+    parser.add_argument("--no-email", action="store_true",
+                        help="Run analysis without sending email")
+    args = parser.parse_args()
+
+    cli_tickers = [t.strip().upper() for t in args.tickers if t.strip()] or None
+    should_email = not args.no_email and not args.backtest_only
+    run(tickers=cli_tickers, send_email_flag=should_email,
+        backtest=args.backtest, backtest_only=args.backtest_only)

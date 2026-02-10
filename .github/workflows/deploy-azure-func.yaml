@@ -152,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Creating release.zip..."
-          zip -r release.zip host.json main1.py modules/ DailyRunner/ requirements.txt .python_packages/ -x "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
+          zip -r release.zip host.json main1.py modules/ DailyRunner/ StockAnalysisHttp/ requirements.txt .python_packages/ -x "*.pyc" "__pycache__/*" ".gitignore" ".funcignore" "*.md" "*.log"
           ls -l release.zip
           echo "Verifying zip contents..."
           unzip -l release.zip > zip_contents.txt
@@ -164,6 +164,8 @@ jobs:
           grep -q ".python_packages/lib/site-packages/peewee\.py" zip_contents.txt || { echo "ERROR: peewee.py not in release.zip" >&2; exit 1; }
           grep -q "DailyRunner/function.json" zip_contents.txt || { echo "ERROR: DailyRunner/function.json not in release.zip" >&2; exit 1; }
           grep -q "DailyRunner/__init__.py" zip_contents.txt || { echo "ERROR: DailyRunner/__init__.py not in release.zip" >&2; exit 1; }
+          grep -q "StockAnalysisHttp/function.json" zip_contents.txt || { echo "ERROR: StockAnalysisHttp/function.json not in release.zip" >&2; exit 1; }
+          grep -q "StockAnalysisHttp/__init__.py" zip_contents.txt || { echo "ERROR: StockAnalysisHttp/__init__.py not in release.zip" >&2; exit 1; }
           echo "Zip contents verified ✅"
       - name: Upload artifact for debugging
         uses: actions/upload-artifact@v4
@@ -217,5 +219,9 @@ jobs:
           RG="rg-stocks"
           HOST="$(az functionapp show --name "${APP}" --resource-group "${RG}" --query "defaultHostName" -o tsv)"
           echo "Default domain: https://${HOST}"
-          az functionapp function list --name "${APP}" --resource-group "${RG}" -o table || true
-          echo "Try a function at: https://${HOST}/api/DailyRunner"
+          FUNCS=$(az functionapp function list --name "${APP}" --resource-group "${RG}" -o table)
+          echo "$FUNCS"
+          echo "$FUNCS" | grep -q "DailyRunner" || echo "WARNING: DailyRunner not found in function list"
+          echo "$FUNCS" | grep -q "StockAnalysisHttp" || echo "WARNING: StockAnalysisHttp not found in function list"
+          echo "Expected 2 functions: DailyRunner (timerTrigger) + StockAnalysisHttp (httpTrigger)"
+          echo "HTTP trigger: https://${HOST}/api/StockAnalysisHttp?tickers=AAPL&code=<function-key>"
